@@ -1,0 +1,20 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="{{ LANGUAGE_CODE|default:'es' }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Reporting{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/variables.css' %}">
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+</head>
+<body>
+    <header class="app-header">
+        <span class="app-header__brand">Reporting</span>
+        <span class="badge badge--{{ current_environment }}">{{ current_environment }}</span>
+    </header>
+    <main class="app-main">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>
