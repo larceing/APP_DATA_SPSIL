@@ -11,7 +11,7 @@
 <body>
     <header class="app-header">
         <span class="app-header__brand">Reporting</span>
-        <span class="badge badge--{{ current_environment }}">{{ current_environment }}</span>
+        <span class="badge badge--{{ gateway_status }}" title="{{ gateway_node_name }}">{{ gateway_status }}</span>
     </header>
     <main class="app-main">
         {% block content %}{% endblock %}

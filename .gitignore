@@ -1,9 +1,10 @@
 venv/
+.claude/
 __pycache__/
 *.pyc
 db.sqlite3
-media/
 staticfiles/
+edge_agent/mock.db
 logs/*.log
 server.pid
 .env

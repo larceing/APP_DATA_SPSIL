@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% load uistrings %}
+
+{% block title %}{% ui "gateway.stock.title" %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>{% ui "gateway.stock.title" %}</h1>
+    <p class="text-muted">{% ui "gateway.stock.description" %}</p>
+
+    <button id="btn-stock" class="button">{% ui "gateway.stock.button" %}</button>
+    <p id="stock-error" style="color: var(--color-danger); display: none;"></p>
+
+    <table id="stock-table" style="width: 100%; margin-top: var(--spacing-md); border-collapse: collapse; display: none;">
+        <thead>
+            <tr>
+                <th style="text-align:left; border-bottom: 1px solid var(--color-border); padding: var(--spacing-sm);">SKU</th>
+                <th style="text-align:left; border-bottom: 1px solid var(--color-border); padding: var(--spacing-sm);">Descripción</th>
+                <th style="text-align:left; border-bottom: 1px solid var(--color-border); padding: var(--spacing-sm);">Cantidad</th>
+                <th style="text-align:left; border-bottom: 1px solid var(--color-border); padding: var(--spacing-sm);">Ubicación</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<script>
+document.getElementById('btn-stock').addEventListener('click', async function () {
+    const button = this;
+    const errorEl = document.getElementById('stock-error');
+    const tableEl = document.getElementById('stock-table');
+    const tbody = tableEl.querySelector('tbody');
+
+    button.disabled = true;
+    errorEl.style.display = 'none';
+    tableEl.style.display = 'none';
+
+    try {
+        const response = await fetch("{% url 'gateway:stock_actual_api' %}");
+        const data = await response.json();
+
+        if (!response.ok) {
+            errorEl.textContent = '{% ui "gateway.stock.error_prefix" %}: ' + (data.error || response.status);
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        for (const row of data.rows) {
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">' + row.sku + '</td>' +
+                '<td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">' + row.descripcion + '</td>' +
+                '<td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">' + row.cantidad + '</td>' +
+                '<td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">' + row.ubicacion + '</td>';
+            tbody.appendChild(tr);
+        }
+        tableEl.style.display = data.rows.length ? 'table' : 'none';
+    } catch (err) {
+        errorEl.textContent = '{% ui "gateway.stock.error_prefix" %}: ' + err;
+        errorEl.style.display = 'block';
+    } finally {
+        button.disabled = false;
+    }
+});
+</script>
+{% endblock %}

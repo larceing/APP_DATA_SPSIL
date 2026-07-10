@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class DatasourcesConfig(AppConfig):
+class GatewayConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'datasources'
+    name = 'gateway'

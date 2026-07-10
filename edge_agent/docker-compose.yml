@@ -1,0 +1,12 @@
+services:
+  edge-agent:
+    build: .
+    container_name: edge-agent
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - edge-agent-db:/app
+    # Sin "ports:": equipo X nunca escucha, siempre inicia la conexión
+    # saliente hacia servidor Y (igual que el Power BI On-Premises Gateway).
+volumes:
+  edge-agent-db:

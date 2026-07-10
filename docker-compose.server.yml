@@ -1,0 +1,16 @@
+services:
+  spsil-web:
+    image: spsil-gateway:latest
+    build: .
+    container_name: spsil-web
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - spsil-db:/app/db
+    networks:
+      - proxy_default
+volumes:
+  spsil-db:
+networks:
+  proxy_default:
+    external: true
