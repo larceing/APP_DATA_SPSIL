@@ -119,7 +119,7 @@ LANGUAGE_CODE = 'es'
 
 LANGUAGES = [
     ('es', 'Español'),
-    ('it', 'Italiano'),
+    ('zh', '中文'),
     ('en', 'English'),
 ]
 
@@ -160,4 +160,6 @@ CHANNEL_LAYERS = {
     },
 }
 
-LOGIN_URL = '/admin/login/'
+LOGIN_URL = '/login/'
+LOGIN_REDIRECT_URL = '/gateway/stock/'
+LOGOUT_REDIRECT_URL = '/login/'

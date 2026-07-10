@@ -3,7 +3,7 @@ import secrets
 from django.contrib import admin, messages
 
 from .consumers import CONNECTED_NODES
-from .models import GatewayNode
+from .models import Department, ExclusionRule, GatewayNode, UserProfile
 
 
 @admin.register(GatewayNode)
@@ -36,3 +36,22 @@ class GatewayNodeAdmin(admin.ModelAdmin):
             node.set_token(raw_token)
             node.save(update_fields=['token_hash'])
             messages.warning(request, f'Nuevo token para "{node.name}": {raw_token}')
+
+
+@admin.register(ExclusionRule)
+class ExclusionRuleAdmin(admin.ModelAdmin):
+    list_display = ('tipo', 'valor', 'activo', 'created_at')
+    list_filter = ('tipo', 'activo')
+    search_fields = ('valor',)
+
+
+@admin.register(Department)
+class DepartmentAdmin(admin.ModelAdmin):
+    list_display = ('name',)
+    search_fields = ('name',)
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'department')
+    list_filter = ('department',)

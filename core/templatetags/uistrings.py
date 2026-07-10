@@ -5,7 +5,7 @@ from core.models import UIString
 
 register = template.Library()
 
-SUPPORTED_LANGUAGES = ('es', 'it', 'en')
+SUPPORTED_LANGUAGES = ('es', 'zh', 'en')
 
 
 @register.simple_tag

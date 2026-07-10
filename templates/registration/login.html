@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% load uistrings %}
+
+{% block title %}{% ui "gateway.login.title" %}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 360px; margin: 40px auto;">
+    <h1>{% ui "gateway.login.title" %}</h1>
+    <form method="post">
+        {% csrf_token %}
+        <div style="margin-bottom: var(--spacing-md);">
+            <label for="{{ form.username.id_for_label }}">{% ui "gateway.login.username" %}</label><br>
+            {{ form.username }}
+        </div>
+        <div style="margin-bottom: var(--spacing-md);">
+            <label for="{{ form.password.id_for_label }}">{% ui "gateway.login.password" %}</label><br>
+            {{ form.password }}
+        </div>
+        {% if form.errors %}
+            <p style="color: var(--color-danger);">{% ui "gateway.stock.error_prefix" %}</p>
+        {% endif %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit" class="button">{% ui "gateway.login.submit" %}</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,4 +1,4 @@
-{% load static %}
+{% load static uistrings %}
 <!DOCTYPE html>
 <html lang="{{ LANGUAGE_CODE|default:'es' }}">
 <head>
@@ -11,7 +11,16 @@
 <body>
     <header class="app-header">
         <span class="app-header__brand">Reporting</span>
-        <span class="badge badge--{{ gateway_status }}" title="{{ gateway_node_name }}">{{ gateway_status }}</span>
+        <div class="app-header__right">
+            <span class="badge badge--{{ gateway_status }}" title="{{ gateway_node_name }}">{{ gateway_status }}</span>
+            {% if request.user.is_authenticated %}
+                <span class="text-muted">{{ request.user.username }}</span>
+                {% if request.user.is_staff %}
+                    <a href="{% url 'gateway:config' %}">{% ui "gateway.nav.config" %}</a>
+                {% endif %}
+                <a href="{% url 'logout' %}">{% ui "gateway.nav.logout" %}</a>
+            {% endif %}
+        </div>
     </header>
     <main class="app-main">
         {% block content %}{% endblock %}

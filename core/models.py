@@ -2,11 +2,11 @@ from django.db import models
 
 
 class UIString(models.Model):
-    """Texto de interfaz traducido a es/it/en, referenciado por clave desde plantillas."""
+    """Texto de interfaz traducido a es/zh/en, referenciado por clave desde plantillas."""
 
     key = models.CharField(max_length=200, unique=True)
     es = models.TextField(blank=True)
-    it = models.TextField(blank=True)
+    zh = models.TextField(blank=True)
     en = models.TextField(blank=True)
     notes = models.CharField(
         max_length=255, blank=True, help_text='Contexto para quien traduzca'

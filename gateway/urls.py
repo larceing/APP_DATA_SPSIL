@@ -7,4 +7,7 @@ app_name = 'gateway'
 urlpatterns = [
     path('stock/', views.stock_view, name='stock'),
     path('stock/actual/', views.stock_actual_api, name='stock_actual_api'),
+    path('config/', views.config_view, name='config'),
+    path('config/add/', views.config_add_rule, name='config_add_rule'),
+    path('config/<int:rule_id>/delete/', views.config_delete_rule, name='config_delete_rule'),
 ]
