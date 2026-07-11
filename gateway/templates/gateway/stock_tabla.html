@@ -22,7 +22,13 @@
     </div>
     <p id="stock-tabla-error" style="color: var(--color-danger); display: none;"></p>
 
-    <div style="overflow-x: auto;">
+    {% comment %}
+    Alto acotado a lo que cabe en pantalla: el scroll (horizontal Y
+    vertical) pasa a ser de este contenedor, no de toda la página — así
+    "Actualizar"/filtros y la barra de scroll horizontal siempre quedan
+    a la vista, sin tener que bajar hasta el final de la tabla.
+    {% endcomment %}
+    <div style="overflow: auto; max-height: calc(100vh - 320px);">
         <table id="stock-tabla-table" class="stock-tabla-table" style="width: 100%; margin-top: var(--spacing-md); border-collapse: collapse; display: none; white-space: nowrap;">
             <thead><tr></tr></thead>
             <tbody></tbody>
