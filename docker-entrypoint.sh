@@ -3,4 +3,4 @@ set -e
 
 python manage.py migrate --noinput
 
-exec daphne -b 0.0.0.0 -p 8010 config.asgi:application
+exec uvicorn config.asgi:application --host 0.0.0.0 --port 8010
