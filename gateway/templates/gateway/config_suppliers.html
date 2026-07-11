@@ -15,10 +15,12 @@
         <button type="submit" class="button">{% ui "gateway.config.add_button" %}</button>
     </form>
 
-    {# Un <form> por fila, vacío y fuera de la tabla: los <td> no pueden
-       anidar <form> de forma válida, así que los inputs de cada fila se
-       asocian a su form mediante el atributo form="id" (soportado en
-       todos los navegadores modernos). #}
+    {% comment %}
+    Un <form> por fila, vacío y fuera de la tabla: los <td> no pueden
+    anidar <form> de forma válida, así que los inputs de cada fila se
+    asocian a su form mediante el atributo form="id" (soportado en
+    todos los navegadores modernos).
+    {% endcomment %}
     {% for sc in supplier_categories %}
     <form id="sc-save-{{ sc.id }}" method="post" action="{% url 'gateway:config_save_supplier_category' %}">{% csrf_token %}</form>
     <form id="sc-delete-{{ sc.id }}" method="post" action="{% url 'gateway:config_delete_supplier_category' sc.id %}">{% csrf_token %}</form>
