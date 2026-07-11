@@ -369,8 +369,12 @@ def _merge_base_data():
         etiquetas_articulo = etiquetas_raw.get(codart, {})
 
         base_rows.append({
-            'CODPRO': base['CODPRO'],
+            # CODART va primero a propósito: el frontend fija (sticky) la
+            # primera columna al hacer scroll horizontal, para que se
+            # sepa siempre en qué artículo se está aunque la tabla tenga
+            # muchas columnas (ver gateway/templates/gateway/stock_tabla.html).
             'CODART': base['CODART'],
+            'CODPRO': base['CODPRO'],
             'CODDESCART': f'{base["CODART"]} - {base["Descripcion"]}',
             'Descripcion': base['Descripcion'],
             'Familia': base['Familia'],

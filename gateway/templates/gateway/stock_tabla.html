@@ -2,6 +2,7 @@
 {% load uistrings %}
 
 {% block title %}{% ui "gateway.stock_tabla.title" %}{% endblock %}
+{% block main_class %}app-main--wide{% endblock %}
 
 {% block content %}
 <div class="card">
@@ -22,15 +23,94 @@
     <p id="stock-tabla-error" style="color: var(--color-danger); display: none;"></p>
 
     <div style="overflow-x: auto;">
-        <table id="stock-tabla-table" style="width: 100%; margin-top: var(--spacing-md); border-collapse: collapse; display: none; white-space: nowrap;">
+        <table id="stock-tabla-table" class="stock-tabla-table" style="width: 100%; margin-top: var(--spacing-md); border-collapse: collapse; display: none; white-space: nowrap;">
             <thead><tr></tr></thead>
             <tbody></tbody>
         </table>
     </div>
 </div>
 
+<style>
+/* Tabla densa (muchas columnas): letra y márgenes más pequeños que el
+   resto del portal para que quepa más de un vistazo sin tanto scroll. */
+.stock-tabla-table th,
+.stock-tabla-table td {
+    padding: 4px 8px;
+    font-size: 0.82rem;
+    border-bottom: 1px solid var(--color-border);
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stock-tabla-table th {
+    text-align: left;
+    position: sticky;
+    top: 0;
+    background: var(--color-surface);
+    z-index: 2;
+}
+
+/* Columna fija (CODART, la primera) al hacer scroll horizontal — igual
+   que "inmovilizar columna" en Power BI/Excel, para saber siempre en
+   qué fila se está aunque haya muchas columnas a la derecha. */
+.stock-tabla-table th:first-child,
+.stock-tabla-table td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--color-surface);
+    box-shadow: 2px 0 4px rgba(0, 0, 0, 0.08);
+    z-index: 1;
+}
+
+.stock-tabla-table th:first-child {
+    z-index: 3;
+}
+</style>
+
 <script>
 let filasTabla = [];
+
+// Nombre visible de cada columna (estilo Power BI: el dato interno no
+// cambia, solo cómo se ve aquí). Cualquier columna que no esté en este
+// mapa se muestra con su nombre técnico (guiones bajos por espacios).
+// Para renombrar una columna en pantalla, solo hay que editar este mapa.
+const COLUMN_LABELS = {
+    CODART: 'Cód. Artículo',
+    CODPRO: 'Cód. Proveedor',
+    CODDESCART: 'Código - Descripción',
+    Descripcion: 'Descripción',
+    Familia: 'Familia',
+    Stock_Total: 'Stock Total',
+    Stock_Almacen_1: 'Stock Almacén 1',
+    Stock_Almacen_ASPE: 'Stock Almacén ASPE',
+    Stock_Almacen_Toledo: 'Stock Almacén Toledo',
+    Reservas: 'Reservas',
+    Reserva_B: 'Reserva B',
+    Media_Ventas_Mes: 'Media Ventas/Mes',
+    Media_Ventas_Anio_Anterior: 'Media Ventas Año Anterior',
+    Media_Base_Stock: 'Media Base Stock',
+    Origen_Media_Base_Stock: 'Origen Media Base',
+    StockMin: 'Stock Mín.',
+    StockMax: 'Stock Máx.',
+    PuntoPedido: 'Punto de Pedido',
+    Ratio_Stock_Min: 'Ratio Stock Mín.',
+    Categoria_Proveedor: 'Categoría Proveedor',
+    Categoria_Organizacion: 'Organización',
+    Stock_Total_Innertia: 'Stock Total (WMS)',
+    Dif_A3_menos_Inn: 'Diferencia ERP - WMS',
+    SIZE: 'Tamaño',
+    Picking: 'Picking',
+    Almacenamiento: 'Almacenamiento',
+    Sin_Clasificar: 'Sin Clasificar',
+    Etiquetas_Picking: 'Etiquetas Picking',
+    Etiquetas_Almacenamiento: 'Etiquetas Almacén',
+    Etiquetas_Sin_Clasificar: 'Etiquetas Sin Clasificar',
+};
+
+function nombreColumna(clave) {
+    return COLUMN_LABELS[clave] || clave.replace(/_/g, ' ');
+}
 
 function celda(valor) {
     return valor === null || valor === undefined ? '' : valor;
@@ -38,17 +118,13 @@ function celda(valor) {
 
 function pintarCabecera(columnas) {
     const thead = document.querySelector('#stock-tabla-table thead tr');
-    thead.innerHTML = columnas.map(
-        (c) => '<th style="text-align:left; border-bottom: 1px solid var(--color-border); padding: var(--spacing-sm);">' + c + '</th>'
-    ).join('');
+    thead.innerHTML = columnas.map((c) => '<th>' + nombreColumna(c) + '</th>').join('');
 }
 
 function pintarFilas(filas, columnas) {
     const tbody = document.querySelector('#stock-tabla-table tbody');
     tbody.innerHTML = filas.map((fila) =>
-        '<tr>' + columnas.map(
-            (c) => '<td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">' + celda(fila[c]) + '</td>'
-        ).join('') + '</tr>'
+        '<tr>' + columnas.map((c) => '<td>' + celda(fila[c]) + '</td>').join('') + '</tr>'
     ).join('');
     document.getElementById('stock-tabla-table').style.display = filas.length ? 'table' : 'none';
 }
