@@ -164,12 +164,11 @@ def stock_tabla_export_view(request):
 
 
 @staff_required
-def config_view(request):
+def config_exclusion_view(request):
     rules = ExclusionRule.objects.filter(activo=True)
-    return render(request, 'gateway/config.html', {
+    return render(request, 'gateway/config_exclusion.html', {
         'articulos': rules.filter(tipo=ExclusionRule.Tipo.ARTICULO),
         'familias': rules.filter(tipo=ExclusionRule.Tipo.FAMILIA),
-        'supplier_categories': SupplierCategory.objects.filter(activo=True),
     })
 
 
@@ -182,14 +181,21 @@ def config_add_rule(request):
         ExclusionRule.objects.update_or_create(
             tipo=tipo, valor=valor.upper(), defaults={'activo': True},
         )
-    return redirect('gateway:config')
+    return redirect('gateway:config_exclusion')
 
 
 @staff_required
 @require_POST
 def config_delete_rule(request, rule_id):
     ExclusionRule.objects.filter(pk=rule_id).update(activo=False)
-    return redirect('gateway:config')
+    return redirect('gateway:config_exclusion')
+
+
+@staff_required
+def config_suppliers_view(request):
+    return render(request, 'gateway/config_suppliers.html', {
+        'supplier_categories': SupplierCategory.objects.filter(activo=True),
+    })
 
 
 @staff_required
@@ -211,11 +217,11 @@ def config_save_supplier_category(request):
                 codpro=codpro,
                 defaults={'organizacion': organizacion, 'categoria': categoria, 'activo': True},
             )
-    return redirect('gateway:config')
+    return redirect('gateway:config_suppliers')
 
 
 @staff_required
 @require_POST
 def config_delete_supplier_category(request, supplier_id):
     SupplierCategory.objects.filter(pk=supplier_id).update(activo=False)
-    return redirect('gateway:config')
+    return redirect('gateway:config_suppliers')

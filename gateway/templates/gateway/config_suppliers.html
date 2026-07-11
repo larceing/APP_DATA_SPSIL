@@ -1,62 +1,10 @@
 {% extends "base.html" %}
 {% load uistrings %}
 
-{% block title %}{% ui "gateway.config.title" %}{% endblock %}
+{% block title %}{% ui "gateway.config.supplier_title" %}{% endblock %}
 
 {% block content %}
 <div class="card">
-    <h1>{% ui "gateway.config.title" %}</h1>
-
-    <form method="post" action="{% url 'gateway:config_add_rule' %}" style="display:flex; gap: var(--spacing-sm); align-items:center; margin: var(--spacing-md) 0;">
-        {% csrf_token %}
-        <select name="tipo">
-            <option value="articulo">{% ui "gateway.config.tipo_articulo" %}</option>
-            <option value="familia">{% ui "gateway.config.tipo_familia" %}</option>
-        </select>
-        <input type="text" name="valor" placeholder="{% ui 'gateway.config.valor_label' %}" required>
-        <button type="submit" class="button">{% ui "gateway.config.add_button" %}</button>
-    </form>
-
-    <h2>{% ui "gateway.config.tipo_label" %}: {% ui "gateway.config.tipo_articulo" %}</h2>
-    <table style="width:100%; border-collapse: collapse;">
-        <tbody>
-        {% for rule in articulos %}
-            <tr>
-                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">{{ rule.valor }}</td>
-                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border); text-align:right;">
-                    <form method="post" action="{% url 'gateway:config_delete_rule' rule.id %}">
-                        {% csrf_token %}
-                        <button type="submit" class="button" style="background: var(--color-danger);">{% ui "gateway.config.delete_button" %}</button>
-                    </form>
-                </td>
-            </tr>
-        {% empty %}
-            <tr><td class="text-muted">—</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
-
-    <h2>{% ui "gateway.config.tipo_label" %}: {% ui "gateway.config.tipo_familia" %}</h2>
-    <table style="width:100%; border-collapse: collapse;">
-        <tbody>
-        {% for rule in familias %}
-            <tr>
-                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">{{ rule.valor }}</td>
-                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border); text-align:right;">
-                    <form method="post" action="{% url 'gateway:config_delete_rule' rule.id %}">
-                        {% csrf_token %}
-                        <button type="submit" class="button" style="background: var(--color-danger);">{% ui "gateway.config.delete_button" %}</button>
-                    </form>
-                </td>
-            </tr>
-        {% empty %}
-            <tr><td class="text-muted">—</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
-</div>
-
-<div class="card" style="margin-top: var(--spacing-lg);">
     <h1>{% ui "gateway.config.supplier_title" %}</h1>
 
     <form method="post" action="{% url 'gateway:config_save_supplier_category' %}" style="display:flex; gap: var(--spacing-sm); align-items:center; margin: var(--spacing-md) 0; flex-wrap: wrap;">

@@ -40,8 +40,10 @@
         {% if request.user.is_staff %}
         <div class="sidebar__group">
             <div class="sidebar__group-title">{% ui "gateway.nav.group_config" %}</div>
-            <a class="sidebar__link{% if request.resolver_match.url_name == 'config' %} active{% endif %}"
-               href="{% url 'gateway:config' %}">{% ui "gateway.nav.config" %}</a>
+            <a class="sidebar__link{% if request.resolver_match.url_name == 'config_exclusion' %} active{% endif %}"
+               href="{% url 'gateway:config_exclusion' %}">{% ui "gateway.nav.config_exclusion" %}</a>
+            <a class="sidebar__link{% if request.resolver_match.url_name == 'config_suppliers' %} active{% endif %}"
+               href="{% url 'gateway:config_suppliers' %}">{% ui "gateway.nav.config_suppliers" %}</a>
         </div>
         {% endif %}
 
