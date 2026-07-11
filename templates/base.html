@@ -13,7 +13,9 @@
     {% if request.user.is_authenticated %}
     <nav class="sidebar">
         <a class="sidebar__brand" href="{% url 'gateway:home' %}">
-            <img class="sidebar__logo" src="{% static 'img/spsil-logo.png' %}" alt="SPSIL" onerror="this.style.display='none'">
+            {# Ruta fija (sin pasar por {% templatetag openblock %}static{% templatetag closeblock %}/manifest):
+               un logo que falte no debe tumbar la página entera con un 500. #}
+            <img class="sidebar__logo" src="/static/img/Spsil_logo_web.webp" alt="SPSIL" onerror="this.style.display='none'">
             SPSIL
         </a>
 
