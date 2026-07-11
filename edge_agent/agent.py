@@ -34,8 +34,14 @@ async def handle_message(ws, raw_message):
             # WebSocket mientras se resuelve.
             loop = asyncio.get_running_loop()
             call = functools.partial(handler, **message.get('params', {}))
-            rows = await loop.run_in_executor(None, call)
-            reply = {'request_id': message['request_id'], 'ok': True, 'rows': rows, 'error': None}
+            result = await loop.run_in_executor(None, call)
+            # Un handler puede devolver una lista de filas (stock_actual)
+            # o un dict con clave 'rows' más datos extra (stock_tabla,
+            # para tipos_hueco_descubiertos) sin romper el contrato genérico.
+            if isinstance(result, dict) and 'rows' in result:
+                reply = {'request_id': message['request_id'], 'ok': True, 'error': None, **result}
+            else:
+                reply = {'request_id': message['request_id'], 'ok': True, 'rows': result, 'error': None}
     except Exception as exc:
         log.exception('Error resolviendo query %s', message.get('query'))
         reply = {'request_id': message['request_id'], 'ok': False, 'rows': [], 'error': str(exc)}

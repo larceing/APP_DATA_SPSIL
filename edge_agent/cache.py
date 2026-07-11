@@ -28,10 +28,21 @@ async def refresh_loop(name, compute_fn, interval_seconds):
         try:
             data = await loop.run_in_executor(None, compute_fn)
             _STORE[name] = {'data': data, 'updated_at': datetime.datetime.utcnow()}
-            log.info('Caché %s actualizada: %d filas en %.1fs', name, len(data), loop.time() - inicio)
+            log.info('Caché %s actualizada: %s en %.1fs', name, _describir(data), loop.time() - inicio)
         except Exception:
             log.exception('Error refrescando caché %s (tras %.1fs)', name, loop.time() - inicio)
         await asyncio.sleep(interval_seconds)
+
+
+def _describir(data):
+    """Cuenta de filas para el log, sin asumir que compute_fn siempre
+    devuelve una lista simple (ej. stock_tabla devuelve un dict con
+    'rows' + metadatos)."""
+    filas = data.get('rows') if isinstance(data, dict) else data
+    try:
+        return f'{len(filas)} filas'
+    except TypeError:
+        return 'sin conteo de filas'
 
 
 def get(name):

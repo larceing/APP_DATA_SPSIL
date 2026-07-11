@@ -11,7 +11,7 @@ from django.views.decorators.http import require_GET, require_POST
 from openpyxl.utils import get_column_letter
 
 from .consumers import CONNECTED_NODES
-from .models import ExclusionRule, GatewayNode, SupplierCategory
+from .models import ExclusionRule, GatewayNode, HuecoTipoCategoria, SupplierCategory
 from .permissions import page_required
 
 REQUEST_TIMEOUT = 20  # segundos: el agente encadena varias consultas SQL
@@ -63,19 +63,41 @@ def _ask_gateway(query, params, timeout=REQUEST_TIMEOUT):
     payload = message['payload']
     if not payload.get('ok', True):
         raise GatewayFetchError(502, payload.get('error', 'agent_error'))
-    return payload.get('rows', [])
+    return payload
 
 
 def _fetch_stock_rows():
     exclusion_rules = list(ExclusionRule.objects.filter(activo=True).values('tipo', 'valor'))
-    return _ask_gateway('stock_actual', {'exclusion_rules': exclusion_rules})
+    payload = _ask_gateway('stock_actual', {'exclusion_rules': exclusion_rules})
+    return payload.get('rows', [])
+
+
+def _registrar_tipos_hueco_nuevos(descripciones):
+    """Cualquier TipoHueco.descripcion que equipo X vea en la BD real y que
+    todavía no esté en nuestra configuración se registra automáticamente
+    (activa, sin clasificar) para que el usuario la revise en
+    /gateway/config/tipos-hueco/ — nunca se adivina la clasificación por
+    código."""
+    existentes = set(HuecoTipoCategoria.objects.values_list('descripcion', flat=True))
+    for descripcion in descripciones or []:
+        if descripcion and descripcion not in existentes:
+            HuecoTipoCategoria.objects.get_or_create(
+                descripcion=descripcion,
+                defaults={'categoria': HuecoTipoCategoria.Categoria.IGNORAR, 'activo': True},
+            )
 
 
 def _fetch_stock_tabla_rows():
     supplier_categories = list(
         SupplierCategory.objects.filter(activo=True).values('codpro', 'organizacion', 'categoria')
     )
-    return _ask_gateway('stock_tabla', {'supplier_categories': supplier_categories})
+    hueco_tipos = list(HuecoTipoCategoria.objects.filter(activo=True).values('descripcion', 'categoria'))
+    payload = _ask_gateway('stock_tabla', {
+        'supplier_categories': supplier_categories,
+        'hueco_tipos': hueco_tipos,
+    })
+    _registrar_tipos_hueco_nuevos(payload.get('tipos_hueco_descubiertos', []))
+    return payload.get('rows', [])
 
 
 @login_required
@@ -225,3 +247,27 @@ def config_save_supplier_category(request):
 def config_delete_supplier_category(request, supplier_id):
     SupplierCategory.objects.filter(pk=supplier_id).update(activo=False)
     return redirect('gateway:config_suppliers')
+
+
+@staff_required
+def config_hueco_tipos_view(request):
+    return render(request, 'gateway/config_hueco_tipos.html', {
+        'hueco_tipos': HuecoTipoCategoria.objects.filter(activo=True),
+        'categorias': HuecoTipoCategoria.Categoria.choices,
+    })
+
+
+@staff_required
+@require_POST
+def config_save_hueco_tipo(request, hueco_tipo_id):
+    categoria = request.POST.get('categoria')
+    if categoria in HuecoTipoCategoria.Categoria.values:
+        HuecoTipoCategoria.objects.filter(pk=hueco_tipo_id).update(categoria=categoria)
+    return redirect('gateway:config_hueco_tipos')
+
+
+@staff_required
+@require_POST
+def config_delete_hueco_tipo(request, hueco_tipo_id):
+    HuecoTipoCategoria.objects.filter(pk=hueco_tipo_id).update(activo=False)
+    return redirect('gateway:config_hueco_tipos')

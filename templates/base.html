@@ -44,6 +44,8 @@
                href="{% url 'gateway:config_exclusion' %}">{% ui "gateway.nav.config_exclusion" %}</a>
             <a class="sidebar__link{% if request.resolver_match.url_name == 'config_suppliers' %} active{% endif %}"
                href="{% url 'gateway:config_suppliers' %}">{% ui "gateway.nav.config_suppliers" %}</a>
+            <a class="sidebar__link{% if request.resolver_match.url_name == 'config_hueco_tipos' %} active{% endif %}"
+               href="{% url 'gateway:config_hueco_tipos' %}">{% ui "gateway.nav.config_hueco_tipos" %}</a>
         </div>
         {% endif %}
 

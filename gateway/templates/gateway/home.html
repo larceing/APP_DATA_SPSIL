@@ -26,6 +26,10 @@
         <div class="home-card__group">{% ui "gateway.nav.group_config" %}</div>
         <div class="home-card__title">{% ui "gateway.nav.config_suppliers" %}</div>
     </a>
+    <a class="home-card" href="{% url 'gateway:config_hueco_tipos' %}">
+        <div class="home-card__group">{% ui "gateway.nav.group_config" %}</div>
+        <div class="home-card__title">{% ui "gateway.nav.config_hueco_tipos" %}</div>
+    </a>
     {% endif %}
 
     {% if request.user.is_superuser %}

@@ -23,6 +23,7 @@ import cache
 from db import ID_ALMACEN, ID_CENTRO, MARIADB_DATABASE, MARIADB_HOST, MARIADB_PASSWORD, MARIADB_PORT, MARIADB_USER
 from db import MSSQL_DATABASE, MSSQL_HOST, MSSQL_PASSWORD, MSSQL_USER
 from db import _normalize
+from db import _query_stock as _query_stock_innertia
 
 log = logging.getLogger('edge_agent')
 
@@ -207,9 +208,13 @@ def _mejores_ventas_por_articulo(anio):
 
 def _query_agrupacion_y_etiquetado():
     """Vista ArticuloHuecoStock (idCentro=6, idAlmacen=1, idZona=1) +
-    Hueco + TipoHueco: desglose de stock por artículo en Picking/
-    Almacenamiento, y las etiquetas físicas de cada zona (columna
-    Hueco.etiqueta). Devuelve dos dicts keyed por idArticulo normalizado."""
+    Hueco + TipoHueco: desglose de stock por artículo por cada tipo de
+    hueco físico real (TipoHueco.descripcion tal cual viene de la BD, sin
+    adivinar aquí si es Picking/Almacenamiento — eso lo decide la
+    configuración de servidor Y en build_rows). Devuelve:
+    - tipos_hueco_raw: {idArticulo: {descripcion: unidades}}
+    - etiquetas_raw: {idArticulo: {descripcion: set(etiquetas)}}
+    """
     conn = _mariadb_connect()
     try:
         with conn.cursor() as cur:
@@ -228,34 +233,23 @@ def _query_agrupacion_y_etiquetado():
     finally:
         conn.close()
 
-    agrupacion = {}
-    etiquetado = {}
+    tipos_hueco_raw = {}
+    etiquetas_raw = {}
     for id_articulo, unidad1, etiqueta, descripcion in filas:
         clave = _normalize(id_articulo)
-        descripcion_norm = (descripcion or '').strip().upper()
+        descripcion_norm = (descripcion or '').strip()
+        if not descripcion_norm:
+            continue
         unidad1 = float(unidad1 or 0)
 
-        grupo = agrupacion.setdefault(clave, {'Picking': 0.0, 'Almacenamiento': 0.0})
-        if 'PICKING' in descripcion_norm:
-            grupo['Picking'] += unidad1
-        elif 'ALMACEN' in descripcion_norm:
-            grupo['Almacenamiento'] += unidad1
+        por_tipo = tipos_hueco_raw.setdefault(clave, {})
+        por_tipo[descripcion_norm] = por_tipo.get(descripcion_norm, 0.0) + unidad1
 
         if etiqueta:
-            etiquetas = etiquetado.setdefault(clave, {'Picking': set(), 'Almacenamiento': set()})
-            if 'PICKING' in descripcion_norm:
-                etiquetas['Picking'].add(etiqueta.strip())
-            elif 'ALMACEN' in descripcion_norm:
-                etiquetas['Almacenamiento'].add(etiqueta.strip())
+            por_tipo_etq = etiquetas_raw.setdefault(clave, {})
+            por_tipo_etq.setdefault(descripcion_norm, set()).add(etiqueta.strip())
 
-    etiquetado_final = {
-        clave: {
-            'Etiquetas_Picking': ', '.join(sorted(v['Picking'])) or None,
-            'Etiquetas_Almacenamiento': ', '.join(sorted(v['Almacenamiento'])) or None,
-        }
-        for clave, v in etiquetado.items()
-    }
-    return agrupacion, etiquetado_final
+    return tipos_hueco_raw, etiquetas_raw
 
 
 def _calcular_size(id_articulo, descripcion, familia, stock_min_semanal):
@@ -281,11 +275,18 @@ def _calcular_size(id_articulo, descripcion, familia, stock_min_semanal):
 
 
 def _compute_base_data():
-    """Combina stock, ventas y agrupación/etiquetado por artículo: toda la
-    parte que depende de consultas a BD (SQL Server + MariaDB) y no de la
-    categoría de proveedor (que llega por petición desde servidor Y, ver
-    build_rows). Es la función pesada que refresca cache.refresh_loop en
-    segundo plano — nunca se llama en el camino crítico de una petición.
+    """Combina stock, ventas, stock del WMS (Innertia) y el desglose por
+    tipo de hueco: toda la parte que depende de consultas a BD (SQL
+    Server + MariaDB) y no de configuración que llega por petición desde
+    servidor Y (categoría de proveedor, clasificación de tipos de hueco —
+    ver build_rows). Es la función pesada que refresca cache.refresh_loop
+    en segundo plano — nunca se llama en el camino crítico de una
+    petición.
+
+    Devuelve {'rows': [...], 'tipos_hueco_descubiertos': [...]} — la
+    segunda clave es la lista de TipoHueco.descripcion vistas en este
+    ciclo, para que servidor Y registre automáticamente las que no
+    conozca todavía en /gateway/config/tipos-hueco/.
     """
     t0 = time.monotonic()
     stock = _query_stock_raw()
@@ -295,13 +296,16 @@ def _compute_base_data():
     ventas_actual = _mejores_ventas_por_articulo(anio_actual)
     ventas_anterior = _mejores_ventas_por_articulo(anio_actual - 1)
     t2 = time.monotonic()
-    agrupacion, etiquetado = _query_agrupacion_y_etiquetado()
+    stock_innertia = _query_stock_innertia()
     t3 = time.monotonic()
+    tipos_hueco_raw, etiquetas_raw = _query_agrupacion_y_etiquetado()
+    t4 = time.monotonic()
     log.info(
-        'stock_raw=%.1fs ventas=%.1fs agrupacion_etiquetado=%.1fs',
-        t1 - t0, t2 - t1, t3 - t2,
+        'stock_raw=%.1fs ventas=%.1fs stock_innertia=%.1fs tipos_hueco=%.1fs',
+        t1 - t0, t2 - t1, t3 - t2, t4 - t3,
     )
 
+    tipos_descubiertos = set()
     base_rows = []
     for codart, base in stock.items():
         clave_ventas = base['Cod. Articulo'] or codart
@@ -318,13 +322,18 @@ def _compute_base_data():
         stock_reserva_b = base['Stock Total'] + base['Reserva B']
         stock_reserva_a_b = stock_reserva_a + base['Reserva B']
 
-        grupo_agr = agrupacion.get(codart, {'Picking': 0.0, 'Almacenamiento': 0.0})
-        total_stock_ita = grupo_agr['Picking'] + grupo_agr['Almacenamiento']
+        # Stock_Total_Innertia es el stock según el WMS (MariaDB,
+        # StockDisponibleCentroAlmacen — misma fuente que la página
+        # Stock normal), no una suma del desglose por tipo de hueco:
+        # "Dif_A3_menos_Inn" compara dos sistemas distintos (ERP vs WMS).
+        total_stock_ita = stock_innertia.get(codart, 0.0)
         stock_inn_reserva_a = total_stock_ita + base['Reservas']
         stock_inn_reserva_b = total_stock_ita + base['Reserva B']
         stock_inn_reserva_a_b = stock_inn_reserva_a + base['Reserva B']
 
-        etiquetas = etiquetado.get(codart, {})
+        tipos_articulo = tipos_hueco_raw.get(codart, {})
+        etiquetas_articulo = etiquetas_raw.get(codart, {})
+        tipos_descubiertos.update(tipos_articulo.keys())
 
         base_rows.append({
             'CODPRO': base['CODPRO'],
@@ -349,25 +358,47 @@ def _compute_base_data():
             'Stock_mas_Reserva_A': stock_reserva_a,
             'Stock_mas_Reserva_B': stock_reserva_b,
             'Stock_mas_Reserva_A_mas_B': stock_reserva_a_b,
-            'Picking': grupo_agr['Picking'],
-            'Almacenamiento': grupo_agr['Almacenamiento'],
             'Stock_Total_Innertia': total_stock_ita,
             'Dif_A3_menos_Inn': base['Stock Total'] - total_stock_ita,
             'Stock_Inn_mas_Reserva_A': stock_inn_reserva_a,
             'Stock_Inn_mas_Reserva_B': stock_inn_reserva_b,
             'Stock_Inn_mas_Reserva_A_mas_B': stock_inn_reserva_a_b,
-            'Etiquetas_Picking': etiquetas.get('Etiquetas_Picking'),
-            'Etiquetas_Almacenamiento': etiquetas.get('Etiquetas_Almacenamiento'),
+            '_tipos_hueco_raw': tipos_articulo,
+            '_etiquetas_raw': etiquetas_articulo,
         })
-    return base_rows
+    return {'rows': base_rows, 'tipos_hueco_descubiertos': sorted(tipos_descubiertos)}
 
 
-def build_rows(base_data, supplier_categories=None):
-    """Aplica el multiplicador de categoría de proveedor (StockMin/Max/
-    PuntoPedido, ratios, diferenciales, SIZE...) sobre la base ya
-    precalculada por _compute_base_data(). Cálculo puro en memoria, sin
-    ninguna consulta a BD — esta es la parte que sí corre en el camino
-    crítico de cada petición, y por eso tiene que ser barata.
+def _bucket_tipos_hueco(tipos_raw, mapeo_categoria):
+    """Reparte {descripcion: unidades} en Picking/Almacenamiento/
+    Sin_Clasificar según la configuración que llega de servidor Y
+    (mapeo_categoria: descripcion -> 'picking'/'almacenamiento'/'ignorar').
+    Cualquier descripción que todavía no esté configurada cae en
+    Sin_Clasificar — nunca desaparece stock en silencio."""
+    totales = {'picking': 0.0, 'almacenamiento': 0.0, 'ignorar': 0.0}
+    for descripcion, unidades in tipos_raw.items():
+        categoria = mapeo_categoria.get(descripcion, 'ignorar')
+        totales[categoria if categoria in totales else 'ignorar'] += unidades
+    return totales
+
+
+def _bucket_etiquetas_hueco(etiquetas_raw, mapeo_categoria):
+    grupos = {'picking': set(), 'almacenamiento': set(), 'ignorar': set()}
+    for descripcion, etiquetas in etiquetas_raw.items():
+        categoria = mapeo_categoria.get(descripcion, 'ignorar')
+        grupos[categoria if categoria in grupos else 'ignorar'].update(etiquetas)
+    return {
+        clave: ', '.join(sorted(valores)) or None
+        for clave, valores in grupos.items()
+    }
+
+
+def build_rows(base_data, supplier_categories=None, hueco_tipos=None):
+    """Aplica configuración que solo llega por petición desde servidor Y
+    (categoría de proveedor, clasificación de tipos de hueco) sobre la
+    base ya precalculada por _compute_base_data(). Cálculo puro en
+    memoria, sin ninguna consulta a BD — esta es la parte que sí corre en
+    el camino crítico de cada petición, y por eso tiene que ser barata.
     """
     categorias = {
         _normalize(row.get('codpro')): {
@@ -376,6 +407,7 @@ def build_rows(base_data, supplier_categories=None):
         }
         for row in (supplier_categories or [])
     }
+    mapeo_hueco = {row['descripcion']: row['categoria'] for row in (hueco_tipos or [])}
 
     rows = []
     for base in base_data:
@@ -408,8 +440,12 @@ def build_rows(base_data, supplier_categories=None):
                 else (punto_pedido - base['Stock_Inn_mas_Reserva_A_mas_B'])
             )
 
+        tipos = _bucket_tipos_hueco(base['_tipos_hueco_raw'], mapeo_hueco)
+        etiquetas = _bucket_etiquetas_hueco(base['_etiquetas_raw'], mapeo_hueco)
+        base_sin_internos = {k: v for k, v in base.items() if not k.startswith('_')}
+
         rows.append({
-            **base,
+            **base_sin_internos,
             'Categoria_Organizacion': organizacion,
             'Categoria_Proveedor': categoria,
             'StockMin': stock_min,
@@ -423,19 +459,31 @@ def build_rows(base_data, supplier_categories=None):
             'Diferencial_Cantidad_Pedido_Innertia': diferencial_cantidad_pedido_inn,
             'Stock_Innertia_dividido_StockMin': round(base['Stock_Total_Innertia'] / stock_min, 2) if stock_min else 0,
             'SIZE': _calcular_size(base['CODART'], base['Descripcion'], base['Familia'], stock_min_semanal),
+            'Picking': tipos['picking'],
+            'Almacenamiento': tipos['almacenamiento'],
+            'Sin_Clasificar': tipos['ignorar'],
+            'Etiquetas_Picking': etiquetas['picking'],
+            'Etiquetas_Almacenamiento': etiquetas['almacenamiento'],
+            'Etiquetas_Sin_Clasificar': etiquetas['ignorar'],
         })
 
     rows.sort(key=lambda r: r['CODART'] or '')
     return rows
 
 
-def get_stock_tabla(supplier_categories=None, **params):
+def get_stock_tabla(supplier_categories=None, hueco_tipos=None, **params):
     """Handler registrado en agent.py para la query 'stock_tabla': lee la
     base ya precalculada en segundo plano (ver cache.py) y le aplica la
-    categoría de proveedor. Nunca toca la BD aquí — si el agente acaba de
-    arrancar y todavía no hay ni un ciclo de refresco completo, informa de
-    ello en vez de bloquear la petición esperando una consulta pesada."""
+    configuración que llega por petición (categoría de proveedor,
+    clasificación de tipos de hueco). Nunca toca la BD aquí — si el
+    agente acaba de arrancar y todavía no hay ni un ciclo de refresco
+    completo, informa de ello en vez de bloquear la petición esperando
+    una consulta pesada."""
     entry = cache.get('stock_tabla_base')
     if entry is None:
         raise RuntimeError('cache_warming')
-    return build_rows(entry['data'], supplier_categories)
+    data = entry['data']
+    return {
+        'rows': build_rows(data['rows'], supplier_categories, hueco_tipos),
+        'tipos_hueco_descubiertos': data['tipos_hueco_descubiertos'],
+    }

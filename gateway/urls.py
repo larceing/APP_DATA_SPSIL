@@ -22,4 +22,11 @@ urlpatterns = [
         views.config_delete_supplier_category,
         name='config_delete_supplier_category',
     ),
+    path('config/tipos-hueco/', views.config_hueco_tipos_view, name='config_hueco_tipos'),
+    path('config/tipos-hueco/<int:hueco_tipo_id>/save/', views.config_save_hueco_tipo, name='config_save_hueco_tipo'),
+    path(
+        'config/tipos-hueco/<int:hueco_tipo_id>/delete/',
+        views.config_delete_hueco_tipo,
+        name='config_delete_hueco_tipo',
+    ),
 ]
