@@ -17,7 +17,7 @@ import datetime
 import pymysql
 import pytds
 
-from db import ID_CENTRO, MARIADB_DATABASE, MARIADB_HOST, MARIADB_PASSWORD, MARIADB_PORT, MARIADB_USER
+from db import ID_ALMACEN, ID_CENTRO, MARIADB_DATABASE, MARIADB_HOST, MARIADB_PASSWORD, MARIADB_PORT, MARIADB_USER
 from db import MSSQL_DATABASE, MSSQL_HOST, MSSQL_PASSWORD, MSSQL_USER
 from db import _normalize
 
@@ -147,23 +147,23 @@ def _query_mejores_ventas(anio):
 
 
 def _query_agrupacion_y_etiquetado():
-    """Hueco (idCentro=6) + TipoHueco + ArticuloEstipulado: desglose de
-    stock por artículo en Picking/Almacenamiento, y las etiquetas físicas
-    de cada zona (columna Hueco.etiqueta). Devuelve dos dicts keyed por
-    idArticulo normalizado."""
+    """Vista ArticuloHuecoStock (idCentro=6, idAlmacen=1, idZona=1) +
+    Hueco + TipoHueco: desglose de stock por artículo en Picking/
+    Almacenamiento, y las etiquetas físicas de cada zona (columna
+    Hueco.etiqueta). Devuelve dos dicts keyed por idArticulo normalizado."""
     conn = _mariadb_connect()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 'SELECT ae.idArticulo, ae.unidad1, h.etiqueta, th.descripcion '
-                'FROM ArticuloEstipulado ae '
+                'FROM ArticuloHuecoStock ae '
                 'JOIN Hueco h '
                 '  ON h.idCentro = ae.idCentro AND h.idAlmacen = ae.idAlmacen AND h.idZona = ae.idZona '
                 '  AND h.idCalle = ae.idCalle AND h.idSeccion = ae.idSeccion AND h.idNivel = ae.idNivel '
                 '  AND h.idHueco = ae.idHueco AND h.idSubhueco = ae.idSubHueco '
                 'JOIN TipoHueco th ON th.idTipoHueco = h.tipoHueco '
-                'WHERE h.idCentro = %s',
-                (ID_CENTRO,),
+                'WHERE ae.idCentro = %s AND ae.idAlmacen = %s AND ae.idZona = 1',
+                (ID_CENTRO, ID_ALMACEN),
             )
             filas = cur.fetchall()
     finally:

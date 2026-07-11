@@ -186,7 +186,7 @@ de envase + desglose Picking/Almacenamiento, todo cruzado por artículo.
 
 - `edge_agent/stock_tabla.py` — todo el cálculo: SQL Server
   (`dbo.VW_OFERTAS_STOCK_RAW` + `LINEOFER` con `RANK()` para mejores ventas)
-  y MariaDB (`Hueco`/`TipoHueco`/`ArticuloEstipulado` para Picking/
+  y MariaDB (`Hueco`/`TipoHueco`/vista `ArticuloHuecoStock` para Picking/
   Almacenamiento y etiquetas físicas). Sin pandas a propósito: el volumen
   de artículos es modesto y los cruces se hacen con diccionarios normales.
 - `SupplierCategory` (categoría 1-4 + organización de cada proveedor) sigue
