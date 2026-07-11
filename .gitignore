@@ -8,3 +8,4 @@ edge_agent/mock.db
 logs/*.log
 server.pid
 .env
+datainputtemplates/

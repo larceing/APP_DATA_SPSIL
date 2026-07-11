@@ -178,12 +178,43 @@ cabecera corrupta y no se usa. A partir de aquí, edita las reglas desde
 5. Ir a `/gateway/stock/`, pulsar el botón: llegan las filas de stock ya
    filtradas.
 
+## Stock Tabla (sector Compras)
+
+Segunda página real, réplica del informe "Control_Stock" de Power BI:
+stock por almacén + histórico de ventas + categoría de proveedor + tamaño
+de envase + desglose Picking/Almacenamiento, todo cruzado por artículo.
+
+- `edge_agent/stock_tabla.py` — todo el cálculo: SQL Server
+  (`dbo.VW_OFERTAS_STOCK_RAW` + `LINEOFER` con `RANK()` para mejores ventas)
+  y MariaDB (`Hueco`/`TipoHueco`/`ArticuloEstipulado` para Picking/
+  Almacenamiento y etiquetas físicas). Sin pandas a propósito: el volumen
+  de artículos es modesto y los cruces se hacen con diccionarios normales.
+- `SupplierCategory` (categoría 1-4 + organización de cada proveedor) sigue
+  el mismo patrón que `ExclusionRule`: se importa **una vez** desde otro
+  Google Sheet (`manage.py import_supplier_categories`) y se manda por el
+  túnel en cada consulta — el agente no vuelve a tocar Google Sheets.
+- Los umbrales de "Volumetría" (para clasificar PEQUEÑO/MEDIO/GRANDE/EXTRA)
+  son constantes fijas en `edge_agent/stock_tabla.py::VOLUMETRIA`, no una
+  consulta — si cambian, se edita ahí.
+- La tabla se genera dinámicamente en el navegador a partir de las claves
+  que devuelva cada fila (~40 columnas), sin cabeceras hardcodeadas.
+- Acceso: página `Page(slug='stock-tabla', group_label='Compras')` — nadie
+  la ve por defecto (a diferencia de "Stock", aquí no hubo que apadrinar a
+  nadie porque es una página nueva). Se asigna por departamento
+  (`/admin/gateway/department/`, ej. crear "Compras" y marcarle esta
+  página) o suelta a un usuario en su perfil.
+
+```
+venv\Scripts\python.exe manage.py import_supplier_categories
+```
+
 ## Añadir un segundo tipo de consulta
 
-No hace falta generalizar nada todavía: añade una entrada a
-`QUERY_HANDLERS` en `edge_agent/agent.py` y una vista/URL/plantilla nueva
-en `gateway/` reutilizando el mismo bloque `new_channel`/`send`/`receive`
-de `gateway/views.py`.
+Ya hay dos ejemplos reales de cómo hacerlo (Stock y Stock Tabla): añade una
+entrada a `QUERY_HANDLERS` en `edge_agent/agent.py`, una vista nueva en
+`gateway/views.py` usando el helper compartido `_ask_gateway(query, params)`
+(mismo `new_channel`/`send`/`receive` de siempre), una `Page` nueva (con su
+`group_label` de sidebar) y su plantilla.
 
 ## Despliegue con Docker
 
@@ -208,10 +239,14 @@ de `gateway/views.py`.
 - El token del nodo viaja en el query string del WebSocket; mitigado por
   TLS (`wss://`) en el proxy compartido.
 - V1 asume un único `GatewayNode` activo.
-- No he podido probar `edge_agent/db.py` contra el MariaDB/SQL Server
-  reales (son IPs privadas de tu LAN, `192.168.10.x`, inalcanzables desde
-  aquí) — sí verificado: la lógica de exclusión (por código y por familia)
-  con datos simulados, la importación real desde el Google Sheet, y el
-  flujo completo túnel+roles con un agente de prueba. Falta la primera
-  prueba real ya en equipo X con las credenciales de verdad.
+- No he podido probar `edge_agent/db.py` ni `edge_agent/stock_tabla.py`
+  contra el MariaDB/SQL Server reales (son IPs privadas de tu LAN,
+  `192.168.10.x`, inalcanzables desde aquí) — sí verificado: la lógica de
+  cálculo de ambos (exclusión, multiplicadores, SIZE...) con datos
+  simulados, la importación real de los dos Google Sheets (exclusión y
+  categoría de proveedores), y el flujo completo túnel+roles+permisos con
+  un agente de prueba. Falta la primera prueba real ya en equipo X con las
+  credenciales/consultas de verdad — en particular, confirmar que las
+  columnas exactas de `dbo.VW_OFERTAS_STOCK_RAW` coinciden con las que
+  espera `_query_stock_raw()`.
 - API externa de solo lectura — decidido dejarlo para después.

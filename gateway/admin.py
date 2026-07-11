@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .consumers import CONNECTED_NODES
-from .models import Department, ExclusionRule, GatewayNode, Page, UserProfile
+from .models import Department, ExclusionRule, GatewayNode, Page, SupplierCategory, UserProfile
 
 
 @admin.register(GatewayNode)
@@ -45,6 +45,13 @@ class ExclusionRuleAdmin(admin.ModelAdmin):
     list_display = ('tipo', 'valor', 'activo', 'created_at')
     list_filter = ('tipo', 'activo')
     search_fields = ('valor',)
+
+
+@admin.register(SupplierCategory)
+class SupplierCategoryAdmin(admin.ModelAdmin):
+    list_display = ('codpro', 'organizacion', 'categoria', 'activo')
+    list_filter = ('categoria', 'activo')
+    search_fields = ('codpro', 'organizacion')
 
 
 @admin.register(Page)

@@ -11,37 +11,34 @@ from django.views.decorators.http import require_GET, require_POST
 from openpyxl.utils import get_column_letter
 
 from .consumers import CONNECTED_NODES
-from .models import ExclusionRule, GatewayNode
+from .models import ExclusionRule, GatewayNode, SupplierCategory
 from .permissions import page_required
 
-REQUEST_TIMEOUT = 20  # segundos: el agente ahora encadena MariaDB + SQL Server
+REQUEST_TIMEOUT = 20  # segundos: el agente encadena varias consultas SQL
 
 staff_required = user_passes_test(lambda u: u.is_staff)
 
 
-class StockFetchError(Exception):
-    """Error al pedir el stock por el túnel: (código HTTP, clave de error)."""
+class GatewayFetchError(Exception):
+    """Error al pedir datos por el túnel: (código HTTP, clave de error)."""
 
     def __init__(self, status, error):
         self.status = status
         self.error = error
 
 
-def _fetch_stock_rows():
-    """Pide el stock actual a equipo X por el túnel. Lanza StockFetchError si
-    el nodo no está configurado/conectado, si responde con error, o si no
-    contesta a tiempo. Usado tanto por la API JSON como por la exportación."""
+def _ask_gateway(query, params, timeout=REQUEST_TIMEOUT):
+    """Pide `query` a equipo X por el túnel y espera la respuesta. Lanza
+    GatewayFetchError si el nodo no está configurado/conectado, si responde
+    con error, o si no contesta a tiempo. Compartido por todas las páginas
+    que piden datos en vivo (Stock, Stock Tabla...)."""
     node = GatewayNode.objects.filter(active=True).first()
     if node is None:
-        raise StockFetchError(503, 'no_node_configured')
+        raise GatewayFetchError(503, 'no_node_configured')
 
     channel_name = CONNECTED_NODES.get(node.slug)
     if not channel_name:
-        raise StockFetchError(503, 'node_offline')
-
-    exclusion_rules = list(
-        ExclusionRule.objects.filter(activo=True).values('tipo', 'valor')
-    )
+        raise GatewayFetchError(503, 'node_offline')
 
     async def _ask():
         channel_layer = get_channel_layer()
@@ -50,23 +47,35 @@ def _fetch_stock_rows():
         await channel_layer.send(channel_name, {
             'type': 'gateway.query',
             'request_id': request_id,
-            'query': 'stock_actual',
-            'params': {'exclusion_rules': exclusion_rules},
+            'query': query,
+            'params': params,
             'reply_channel': reply_channel,
         })
         try:
-            return await asyncio.wait_for(channel_layer.receive(reply_channel), timeout=REQUEST_TIMEOUT)
+            return await asyncio.wait_for(channel_layer.receive(reply_channel), timeout=timeout)
         except asyncio.TimeoutError:
             return None
 
     message = async_to_sync(_ask)()
     if message is None:
-        raise StockFetchError(504, 'timeout')
+        raise GatewayFetchError(504, 'timeout')
 
     payload = message['payload']
     if not payload.get('ok', True):
-        raise StockFetchError(502, payload.get('error', 'agent_error'))
+        raise GatewayFetchError(502, payload.get('error', 'agent_error'))
     return payload.get('rows', [])
+
+
+def _fetch_stock_rows():
+    exclusion_rules = list(ExclusionRule.objects.filter(activo=True).values('tipo', 'valor'))
+    return _ask_gateway('stock_actual', {'exclusion_rules': exclusion_rules})
+
+
+def _fetch_stock_tabla_rows():
+    supplier_categories = list(
+        SupplierCategory.objects.filter(activo=True).values('codpro', 'organizacion', 'categoria')
+    )
+    return _ask_gateway('stock_tabla', {'supplier_categories': supplier_categories})
 
 
 @login_required
@@ -84,7 +93,7 @@ def stock_view(request):
 def stock_actual_api(request):
     try:
         rows = _fetch_stock_rows()
-    except StockFetchError as exc:
+    except GatewayFetchError as exc:
         return JsonResponse({'error': exc.error}, status=exc.status)
     return JsonResponse({'rows': rows})
 
@@ -94,7 +103,7 @@ def stock_actual_api(request):
 def stock_export_view(request):
     try:
         rows = _fetch_stock_rows()
-    except StockFetchError as exc:
+    except GatewayFetchError as exc:
         return JsonResponse({'error': exc.error}, status=exc.status)
 
     workbook = openpyxl.Workbook()
@@ -110,6 +119,46 @@ def stock_export_view(request):
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
     response['Content-Disposition'] = 'attachment; filename="stock.xlsx"'
+    workbook.save(response)
+    return response
+
+
+@page_required('stock-tabla')
+def stock_tabla_view(request):
+    return render(request, 'gateway/stock_tabla.html')
+
+
+@page_required('stock-tabla')
+@require_GET
+def stock_tabla_api(request):
+    try:
+        rows = _fetch_stock_tabla_rows()
+    except GatewayFetchError as exc:
+        return JsonResponse({'error': exc.error}, status=exc.status)
+    return JsonResponse({'rows': rows})
+
+
+@page_required('stock-tabla')
+@require_GET
+def stock_tabla_export_view(request):
+    try:
+        rows = _fetch_stock_tabla_rows()
+    except GatewayFetchError as exc:
+        return JsonResponse({'error': exc.error}, status=exc.status)
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = 'Stock Tabla'
+    if rows:
+        columns = list(rows[0].keys())
+        sheet.append(columns)
+        for row in rows:
+            sheet.append([row.get(col) for col in columns])
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = 'attachment; filename="stock_tabla.xlsx"'
     workbook.save(response)
     return response
 

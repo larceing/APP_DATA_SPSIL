@@ -6,12 +6,14 @@ import os
 import websockets
 
 from db import get_stock_actual
+from stock_tabla import get_stock_tabla
 
 GATEWAY_URL = os.environ['GATEWAY_URL']  # p.ej. wss://y.example.com/ws/gateway/nave-central/
 NODE_TOKEN = os.environ['NODE_TOKEN']
 
 QUERY_HANDLERS = {
     'stock_actual': get_stock_actual,
+    'stock_tabla': get_stock_tabla,
 }
 
 log = logging.getLogger('edge_agent')

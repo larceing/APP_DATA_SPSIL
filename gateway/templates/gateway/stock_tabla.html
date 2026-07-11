@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% load uistrings %}
+
+{% block title %}{% ui "gateway.stock_tabla.title" %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>{% ui "gateway.stock_tabla.title" %}</h1>
+    <p class="text-muted">{% ui "gateway.stock_tabla.description" %}</p>
+
+    <div style="display:flex; gap: var(--spacing-sm); align-items:center; flex-wrap: wrap; margin: var(--spacing-md) 0;">
+        <button id="btn-stock-tabla" class="button">{% ui "gateway.stock.button" %}</button>
+        <input id="filtro-busqueda" type="search" placeholder="{% ui 'gateway.stock_tabla.filter_busqueda' %}" style="max-width: 260px;">
+        <select id="filtro-categoria" style="max-width: 220px;">
+            <option value="">{% ui "gateway.stock_tabla.filter_categoria" %}: {% ui "gateway.stock_tabla.filter_todas" %}</option>
+        </select>
+        <select id="filtro-familia" style="max-width: 220px;">
+            <option value="">{% ui "gateway.stock_tabla.filter_familia" %}: {% ui "gateway.stock_tabla.filter_todas" %}</option>
+        </select>
+        <a id="btn-export-tabla" class="button" style="background: var(--color-brand-black); text-decoration: none; margin-left: auto;" href="{% url 'gateway:stock_tabla_export' %}">{% ui "gateway.stock.export_button" %}</a>
+    </div>
+    <p id="stock-tabla-error" style="color: var(--color-danger); display: none;"></p>
+
+    <div style="overflow-x: auto;">
+        <table id="stock-tabla-table" style="width: 100%; margin-top: var(--spacing-md); border-collapse: collapse; display: none; white-space: nowrap;">
+            <thead><tr></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+let filasTabla = [];
+
+function celda(valor) {
+    return valor === null || valor === undefined ? '' : valor;
+}
+
+function pintarCabecera(columnas) {
+    const thead = document.querySelector('#stock-tabla-table thead tr');
+    thead.innerHTML = columnas.map(
+        (c) => '<th style="text-align:left; border-bottom: 1px solid var(--color-border); padding: var(--spacing-sm);">' + c + '</th>'
+    ).join('');
+}
+
+function pintarFilas(filas, columnas) {
+    const tbody = document.querySelector('#stock-tabla-table tbody');
+    tbody.innerHTML = filas.map((fila) =>
+        '<tr>' + columnas.map(
+            (c) => '<td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">' + celda(fila[c]) + '</td>'
+        ).join('') + '</tr>'
+    ).join('');
+    document.getElementById('stock-tabla-table').style.display = filas.length ? 'table' : 'none';
+}
+
+function rellenarFiltro(select, valores) {
+    const actual = select.value;
+    const primeras = select.querySelector('option');
+    select.innerHTML = '';
+    select.appendChild(primeras);
+    Array.from(valores).sort().forEach((v) => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        select.appendChild(opt);
+    });
+    select.value = actual;
+}
+
+function aplicarFiltros() {
+    if (!filasTabla.length) return;
+    const columnas = Object.keys(filasTabla[0]);
+    const texto = document.getElementById('filtro-busqueda').value.trim().toUpperCase();
+    const categoria = document.getElementById('filtro-categoria').value;
+    const familia = document.getElementById('filtro-familia').value;
+
+    const filtradas = filasTabla.filter((fila) => {
+        if (texto) {
+            const enTexto = (String(fila.CODART || '') + ' ' + String(fila.Descripcion || '')).toUpperCase();
+            if (!enTexto.includes(texto)) return false;
+        }
+        if (categoria && String(fila.Categoria_Proveedor) !== categoria) return false;
+        if (familia && String(fila.Familia || '') !== familia) return false;
+        return true;
+    });
+    pintarFilas(filtradas, columnas);
+}
+
+document.getElementById('filtro-busqueda').addEventListener('input', aplicarFiltros);
+document.getElementById('filtro-categoria').addEventListener('change', aplicarFiltros);
+document.getElementById('filtro-familia').addEventListener('change', aplicarFiltros);
+
+document.getElementById('btn-stock-tabla').addEventListener('click', async function () {
+    const button = this;
+    const errorEl = document.getElementById('stock-tabla-error');
+
+    button.disabled = true;
+    errorEl.style.display = 'none';
+
+    try {
+        const response = await fetch("{% url 'gateway:stock_tabla_api' %}");
+        const data = await response.json();
+
+        if (!response.ok) {
+            errorEl.textContent = '{% ui "gateway.stock.error_prefix" %}: ' + (data.error || response.status);
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        filasTabla = data.rows;
+        if (filasTabla.length) {
+            const columnas = Object.keys(filasTabla[0]);
+            pintarCabecera(columnas);
+            rellenarFiltro(document.getElementById('filtro-categoria'), new Set(filasTabla.map((f) => String(f.Categoria_Proveedor))));
+            rellenarFiltro(document.getElementById('filtro-familia'), new Set(filasTabla.map((f) => f.Familia || '').filter(Boolean)));
+        }
+        aplicarFiltros();
+    } catch (err) {
+        errorEl.textContent = '{% ui "gateway.stock.error_prefix" %}: ' + err;
+        errorEl.style.display = 'block';
+    } finally {
+        button.disabled = false;
+    }
+});
+</script>
+{% endblock %}

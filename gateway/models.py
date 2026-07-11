@@ -55,6 +55,26 @@ class ExclusionRule(models.Model):
         super().save(*args, **kwargs)
 
 
+class SupplierCategory(models.Model):
+    """Categoría (1-4) y organización de un proveedor (CODPRO), usada para
+    los multiplicadores de Stock Mín/Máx/Punto de Pedido de Stock Tabla.
+    Se importa una sola vez desde un Google Sheet de control (ver
+    management command import_supplier_categories); no se vuelve a leer
+    Google Sheets en marcha."""
+
+    codpro = models.CharField(max_length=20, unique=True)
+    organizacion = models.CharField(max_length=150, blank=True)
+    categoria = models.PositiveSmallIntegerField()
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['codpro']
+        verbose_name_plural = 'Supplier categories'
+
+    def __str__(self):
+        return f'{self.codpro} (cat. {self.categoria})'
+
+
 class Page(models.Model):
     """Una página/informe del sidebar (hoy solo 'Stock'). El acceso se
     concede por departamento (todos los miembros la ven) o suelto a un
