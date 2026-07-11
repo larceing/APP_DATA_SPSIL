@@ -150,9 +150,12 @@ html, body {
 }
 
 .app-main {
+    flex: 1;
+    overflow-y: auto;
     padding: var(--spacing-lg);
     max-width: 1200px;
     margin: 0 auto;
+    width: 100%;
 }
 
 .card {
