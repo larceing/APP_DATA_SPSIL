@@ -9,5 +9,5 @@ COPY . .
 RUN python manage.py collectstatic --noinput
 RUN chmod +x docker-entrypoint.sh
 
-EXPOSE 8000
+EXPOSE 8010
 CMD ["./docker-entrypoint.sh"]
