@@ -47,7 +47,14 @@ async def run():
     backoff = 1
     while True:
         try:
-            async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
+            # ping_timeout generoso: pytds/pymysql son drivers puros en
+            # Python y pueden retener el GIL buena parte de una consulta
+            # larga (aunque corra en un hilo aparte vía run_in_executor),
+            # lo que retrasa el pong. No necesitamos detectar una caída
+            # real en segundos — con 1-2 minutos sobra para este uso, y
+            # así evitamos reconexiones espurias justo durante el refresco
+            # en segundo plano de la caché.
+            async with websockets.connect(url, ping_interval=30, ping_timeout=90) as ws:
                 log.info('Conectado a %s', GATEWAY_URL)
                 backoff = 1
                 async for raw_message in ws:
