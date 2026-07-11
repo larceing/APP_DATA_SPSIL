@@ -55,11 +55,12 @@ def _query_stock_raw():
     Devuelve dict keyed por CODART normalizado."""
     conn = _mssql_connect()
     try:
-        with conn.cursor(as_dict=True) as cur:
+        with conn.cursor() as cur:
             cur.execute('SELECT * FROM dbo.VW_OFERTAS_STOCK_RAW')
             columns = [d[0] for d in cur.description]
             filas = {}
-            for row in cur.fetchall():
+            for row_tuple in cur.fetchall():
+                row = dict(zip(columns, row_tuple))
                 codart = _normalize(row.get('CODART'))
                 if not codart:
                     continue
