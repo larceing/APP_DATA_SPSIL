@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load uistrings %}
+
+{% block title %}{% ui "gateway.home.title" %}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>{% ui "gateway.home.welcome" %}, {{ request.user.username }}</h1>
+    <p class="text-muted">{% ui "gateway.home.subtitle" %}</p>
+</div>
+
+<div class="home-grid">
+    <a class="home-card" href="{% url 'gateway:stock' %}">
+        <div class="home-card__group">{% ui "gateway.nav.group_almacen" %}</div>
+        <div class="home-card__title">{% ui "gateway.nav.stock" %}</div>
+    </a>
+
+    {% if request.user.is_staff %}
+    <a class="home-card" href="{% url 'gateway:config' %}">
+        <div class="home-card__group">{% ui "gateway.nav.group_config" %}</div>
+        <div class="home-card__title">{% ui "gateway.nav.config" %}</div>
+    </a>
+    {% endif %}
+
+    {% if request.user.is_superuser %}
+    <a class="home-card" href="/admin/auth/user/">
+        <div class="home-card__group">{% ui "gateway.nav.group_admin" %}</div>
+        <div class="home-card__title">{% ui "gateway.nav.users" %}</div>
+    </a>
+    <a class="home-card" href="/admin/gateway/gatewaynode/">
+        <div class="home-card__group">{% ui "gateway.nav.group_admin" %}</div>
+        <div class="home-card__title">{% ui "gateway.nav.nodes" %}</div>
+    </a>
+    {% endif %}
+</div>
+{% endblock %}

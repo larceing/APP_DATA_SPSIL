@@ -12,9 +12,14 @@
 <div class="app-shell">
     {% if request.user.is_authenticated %}
     <nav class="sidebar">
-        <div class="sidebar__brand">
+        <a class="sidebar__brand" href="{% url 'gateway:home' %}">
             <img class="sidebar__logo" src="{% static 'img/spsil-logo.png' %}" alt="SPSIL" onerror="this.style.display='none'">
             SPSIL
+        </a>
+
+        <div class="sidebar__group">
+            <a class="sidebar__link{% if request.resolver_match.url_name == 'home' %} active{% endif %}"
+               href="{% url 'gateway:home' %}">{% ui "gateway.nav.home" %}</a>
         </div>
 
         <div class="sidebar__group">

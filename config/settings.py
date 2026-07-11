@@ -168,5 +168,5 @@ CHANNEL_LAYERS = {
 }
 
 LOGIN_URL = '/login/'
-LOGIN_REDIRECT_URL = '/gateway/stock/'
+LOGIN_REDIRECT_URL = '/gateway/home/'
 LOGOUT_REDIRECT_URL = '/login/'

@@ -69,6 +69,11 @@ def _fetch_stock_rows():
 
 
 @login_required
+def home_view(request):
+    return render(request, 'gateway/home.html')
+
+
+@login_required
 def stock_view(request):
     return render(request, 'gateway/stock.html')
 
