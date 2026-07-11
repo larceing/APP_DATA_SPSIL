@@ -10,8 +10,8 @@
 
     <div style="display:flex; gap: var(--spacing-sm); align-items:center; flex-wrap: wrap; margin: var(--spacing-md) 0;">
         <button id="btn-stock" class="button">{% ui "gateway.stock.button" %}</button>
-        <a id="btn-export" class="button" style="background: var(--color-brand-black); text-decoration: none;" href="{% url 'gateway:stock_export' %}">{% ui "gateway.stock.export_button" %}</a>
         <input id="search-input" type="search" placeholder="{% ui 'gateway.stock.search_placeholder' %}" style="max-width: 320px;">
+        <a id="btn-export" class="button" style="background: var(--color-brand-black); text-decoration: none; margin-left: auto;" href="{% url 'gateway:stock_export' %}">{% ui "gateway.stock.export_button" %}</a>
     </div>
     <p id="stock-error" style="color: var(--color-danger); display: none;"></p>
 
