@@ -50,6 +50,32 @@ a un `is_staff` no-superusuario a menos que se los asignes a mano, así que
 por construcción solo el superusuario puede dar de alta cuentas — no toques
 los permisos de `auth` de los Admin si quieres mantener esta restricción.
 
+## Interfaz
+
+- **Sidebar izquierdo agrupado por rol** (`templates/base.html`): grupo
+  "Almacén" → Stock (todos); grupo "Configuración" → reglas de exclusión
+  (Admin/Superadmin); grupo "Administración" → enlaces a Usuarios/Nodos del
+  admin de Django (solo Superadmin). Cada grupo se muestra u oculta según
+  `request.user.is_staff`/`is_superuser` directamente en la plantilla.
+- **Idioma (es/zh/en)**: selector en la cabecera. Usa un mecanismo **propio**
+  (cookie `app_language` + `core/middleware.py` + `core/views.py::set_language`),
+  **no** el `set_language`/`LocaleMiddleware` de Django — ese exige un
+  catálogo de traducción compilado (gettext) por idioma, y aquí las
+  traducciones viven en la tabla `UIString`, no en catálogos `.mo`. El tag
+  `{% ui %}` (`core/templatetags/uistrings.py`) lee `request.app_language`.
+- **Exportar a Excel**: botón en `/gateway/stock/` que descarga un `.xlsx`
+  (`gateway/views.py::stock_export_view`, vía `openpyxl`) con el stock
+  completo devuelto por el túnel (no respeta el filtro de búsqueda del
+  navegador, que es solo una conveniencia visual).
+- **Marca SPSIL**: colores en `static/css/variables.css`
+  (`--color-brand-yellow`, `--color-brand-black`, `--color-primary` naranja).
+  Tema siempre claro a propósito (pantallas de almacén). Logo: coloca el
+  archivo en `static/img/spsil-logo.png` — la plantilla ya lo referencia
+  (con `onerror` que lo oculta si aún no existe, sin romper el layout).
+- **Modo almacén**: la pestaña Stock usa la clase `.warehouse-view` (texto
+  y botones más grandes, pensado para pantallas táctiles de nave, no de
+  oficina).
+
 ## Cómo funciona el túnel
 
 1. Equipo X (`edge_agent/agent.py`) abre un WebSocket hacia

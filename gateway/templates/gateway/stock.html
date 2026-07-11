@@ -4,13 +4,14 @@
 {% block title %}{% ui "gateway.stock.title" %}{% endblock %}
 
 {% block content %}
-<div class="card">
+<div class="card warehouse-view">
     <h1>{% ui "gateway.stock.title" %}</h1>
     <p class="text-muted">{% ui "gateway.stock.description" %}</p>
 
-    <div style="display:flex; gap: var(--spacing-sm); align-items:center; margin: var(--spacing-md) 0;">
+    <div style="display:flex; gap: var(--spacing-sm); align-items:center; flex-wrap: wrap; margin: var(--spacing-md) 0;">
         <button id="btn-stock" class="button">{% ui "gateway.stock.button" %}</button>
-        <input id="search-input" type="search" placeholder="{% ui 'gateway.stock.search_placeholder' %}" style="max-width: 260px;">
+        <a id="btn-export" class="button" style="background: var(--color-brand-black); text-decoration: none;" href="{% url 'gateway:stock_export' %}">{% ui "gateway.stock.export_button" %}</a>
+        <input id="search-input" type="search" placeholder="{% ui 'gateway.stock.search_placeholder' %}" style="max-width: 320px;">
     </div>
     <p id="stock-error" style="color: var(--color-danger); display: none;"></p>
 

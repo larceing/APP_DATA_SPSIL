@@ -1,11 +1,18 @@
+/* Colores de marca SPSIL (amarillo del escudo, negro, naranja/rojo de la
+   web). Tema siempre claro a propósito (pantallas de almacén, no oficina):
+   sin variante oscura. */
 :root {
-    --color-bg: #f4f5f7;
+    --color-bg: #f7f6f2;
     --color-surface: #ffffff;
-    --color-text: #1f2430;
-    --color-text-muted: #6b7280;
-    --color-border: #e2e5ea;
-    --color-primary: #2563eb;
-    --color-primary-hover: #1d4ed8;
+    --color-text: #1a1a1a;
+    --color-text-muted: #5b5b5b;
+    --color-border: #e4e0d6;
+
+    --color-brand-yellow: #f7c600;
+    --color-brand-black: #1a1a1a;
+
+    --color-primary: #f5821f;
+    --color-primary-hover: #d96e12;
     --color-success: #16a34a;
     --color-danger: #dc2626;
     --color-warning: #d97706;
@@ -23,16 +30,4 @@
     --font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
     --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.10);
-}
-
-@media (prefers-color-scheme: dark) {
-    :root {
-        --color-bg: #14161c;
-        --color-surface: #1c1f27;
-        --color-text: #e7e9ee;
-        --color-text-muted: #9aa1af;
-        --color-border: #2a2e38;
-        --color-primary: #5b8def;
-        --color-primary-hover: #7ba3f2;
-    }
 }

@@ -10,15 +10,14 @@
     <form method="post" action="{% url 'gateway:config_add_rule' %}" style="display:flex; gap: var(--spacing-sm); align-items:center; margin: var(--spacing-md) 0;">
         {% csrf_token %}
         <select name="tipo">
-            {% for value, label in tipo_choices %}
-            <option value="{{ value }}">{{ label }}</option>
-            {% endfor %}
+            <option value="articulo">{% ui "gateway.config.tipo_articulo" %}</option>
+            <option value="familia">{% ui "gateway.config.tipo_familia" %}</option>
         </select>
         <input type="text" name="valor" placeholder="{% ui 'gateway.config.valor_label' %}" required>
         <button type="submit" class="button">{% ui "gateway.config.add_button" %}</button>
     </form>
 
-    <h2>{% ui "gateway.config.tipo_label" %}: Artículo</h2>
+    <h2>{% ui "gateway.config.tipo_label" %}: {% ui "gateway.config.tipo_articulo" %}</h2>
     <table style="width:100%; border-collapse: collapse;">
         <tbody>
         {% for rule in articulos %}
@@ -37,7 +36,7 @@
         </tbody>
     </table>
 
-    <h2>{% ui "gateway.config.tipo_label" %}: Familia</h2>
+    <h2>{% ui "gateway.config.tipo_label" %}: {% ui "gateway.config.tipo_familia" %}</h2>
     <table style="width:100%; border-collapse: collapse;">
         <tbody>
         {% for rule in familias %}

@@ -1,29 +1,70 @@
 {% load static uistrings %}
 <!DOCTYPE html>
-<html lang="{{ LANGUAGE_CODE|default:'es' }}">
+<html lang="{{ CURRENT_LANGUAGE|default:'es' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Reporting{% endblock %}</title>
+    <title>{% block title %}SPSIL{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/variables.css' %}">
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
 </head>
 <body>
-    <header class="app-header">
-        <span class="app-header__brand">Reporting</span>
-        <div class="app-header__right">
-            <span class="badge badge--{{ gateway_status }}" title="{{ gateway_node_name }}">{{ gateway_status }}</span>
-            {% if request.user.is_authenticated %}
-                <span class="text-muted">{{ request.user.username }}</span>
-                {% if request.user.is_staff %}
-                    <a href="{% url 'gateway:config' %}">{% ui "gateway.nav.config" %}</a>
-                {% endif %}
-                <a href="{% url 'logout' %}">{% ui "gateway.nav.logout" %}</a>
-            {% endif %}
+<div class="app-shell">
+    {% if request.user.is_authenticated %}
+    <nav class="sidebar">
+        <div class="sidebar__brand">
+            <img class="sidebar__logo" src="{% static 'img/spsil-logo.png' %}" alt="SPSIL" onerror="this.style.display='none'">
+            SPSIL
         </div>
-    </header>
-    <main class="app-main">
-        {% block content %}{% endblock %}
-    </main>
+
+        <div class="sidebar__group">
+            <div class="sidebar__group-title">{% ui "gateway.nav.group_almacen" %}</div>
+            <a class="sidebar__link{% if request.resolver_match.url_name == 'stock' %} active{% endif %}"
+               href="{% url 'gateway:stock' %}">{% ui "gateway.nav.stock" %}</a>
+        </div>
+
+        {% if request.user.is_staff %}
+        <div class="sidebar__group">
+            <div class="sidebar__group-title">{% ui "gateway.nav.group_config" %}</div>
+            <a class="sidebar__link{% if request.resolver_match.url_name == 'config' %} active{% endif %}"
+               href="{% url 'gateway:config' %}">{% ui "gateway.nav.config" %}</a>
+        </div>
+        {% endif %}
+
+        {% if request.user.is_superuser %}
+        <div class="sidebar__group">
+            <div class="sidebar__group-title">{% ui "gateway.nav.group_admin" %}</div>
+            <a class="sidebar__link" href="/admin/auth/user/">{% ui "gateway.nav.users" %}</a>
+            <a class="sidebar__link" href="/admin/gateway/gatewaynode/">{% ui "gateway.nav.nodes" %}</a>
+        </div>
+        {% endif %}
+    </nav>
+    {% endif %}
+
+    <div class="app-body">
+        <header class="app-header">
+            <div class="app-header__right">
+                <span class="badge badge--{{ gateway_status }}" title="{{ gateway_node_name }}">{{ gateway_status }}</span>
+                <div class="lang-switcher">
+                    {% for code, label in LANGUAGES_DISPLAY %}
+                    <form action="{% url 'set_language' %}" method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="language" value="{{ code }}">
+                        <input type="hidden" name="next" value="{{ request.path }}">
+                        <button type="submit" class="{% if code == CURRENT_LANGUAGE %}active{% endif %}">{{ label }}</button>
+                    </form>
+                    {% endfor %}
+                </div>
+                {% if request.user.is_authenticated %}
+                    <span class="text-muted">{{ request.user.username }}</span>
+                    <a href="{% url 'logout' %}">{% ui "gateway.nav.logout" %}</a>
+                {% endif %}
+            </div>
+        </header>
+        <main class="app-main">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</div>
 </body>
 </html>
