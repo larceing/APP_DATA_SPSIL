@@ -15,4 +15,10 @@ urlpatterns = [
     path('config/', views.config_view, name='config'),
     path('config/add/', views.config_add_rule, name='config_add_rule'),
     path('config/<int:rule_id>/delete/', views.config_delete_rule, name='config_delete_rule'),
+    path('config/supplier-categories/save/', views.config_save_supplier_category, name='config_save_supplier_category'),
+    path(
+        'config/supplier-categories/<int:supplier_id>/delete/',
+        views.config_delete_supplier_category,
+        name='config_delete_supplier_category',
+    ),
 ]

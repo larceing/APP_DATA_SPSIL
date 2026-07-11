@@ -55,4 +55,58 @@
         </tbody>
     </table>
 </div>
+
+<div class="card" style="margin-top: var(--spacing-lg);">
+    <h1>{% ui "gateway.config.supplier_title" %}</h1>
+
+    <form method="post" action="{% url 'gateway:config_save_supplier_category' %}" style="display:flex; gap: var(--spacing-sm); align-items:center; margin: var(--spacing-md) 0; flex-wrap: wrap;">
+        {% csrf_token %}
+        <input type="text" name="codpro" placeholder="{% ui 'gateway.config.supplier_codpro' %}" style="max-width: 120px;" required>
+        <input type="text" name="organizacion" placeholder="{% ui 'gateway.config.supplier_organizacion' %}" style="max-width: 220px;">
+        <input type="number" name="categoria" placeholder="{% ui 'gateway.config.supplier_categoria' %}" min="1" max="4" style="max-width: 100px;" required>
+        <button type="submit" class="button">{% ui "gateway.config.add_button" %}</button>
+    </form>
+
+    {# Un <form> por fila, vacío y fuera de la tabla: los <td> no pueden
+       anidar <form> de forma válida, así que los inputs de cada fila se
+       asocian a su form mediante el atributo form="id" (soportado en
+       todos los navegadores modernos). #}
+    {% for sc in supplier_categories %}
+    <form id="sc-save-{{ sc.id }}" method="post" action="{% url 'gateway:config_save_supplier_category' %}">{% csrf_token %}</form>
+    <form id="sc-delete-{{ sc.id }}" method="post" action="{% url 'gateway:config_delete_supplier_category' sc.id %}">{% csrf_token %}</form>
+    {% endfor %}
+
+    <table style="width:100%; border-collapse: collapse;">
+        <thead>
+            <tr>
+                <th style="text-align:left; padding: var(--spacing-sm);">{% ui "gateway.config.supplier_codpro" %}</th>
+                <th style="text-align:left; padding: var(--spacing-sm);">{% ui "gateway.config.supplier_organizacion" %}</th>
+                <th style="text-align:left; padding: var(--spacing-sm);">{% ui "gateway.config.supplier_categoria" %}</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for sc in supplier_categories %}
+            <tr>
+                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">
+                    <input form="sc-save-{{ sc.id }}" type="hidden" name="id" value="{{ sc.id }}">
+                    <input form="sc-save-{{ sc.id }}" type="text" name="codpro" value="{{ sc.codpro }}" style="max-width: 120px;">
+                </td>
+                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">
+                    <input form="sc-save-{{ sc.id }}" type="text" name="organizacion" value="{{ sc.organizacion }}" style="max-width: 220px;">
+                </td>
+                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">
+                    <input form="sc-save-{{ sc.id }}" type="number" name="categoria" value="{{ sc.categoria }}" min="1" max="4" style="max-width: 100px;">
+                </td>
+                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border); text-align:right; white-space:nowrap;">
+                    <button form="sc-save-{{ sc.id }}" type="submit" class="button">{% ui "gateway.config.save_button" %}</button>
+                    <button form="sc-delete-{{ sc.id }}" type="submit" class="button" style="background: var(--color-danger);">{% ui "gateway.config.delete_button" %}</button>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td class="text-muted">—</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% endblock %}

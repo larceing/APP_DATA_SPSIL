@@ -192,7 +192,12 @@ de envase + desglose Picking/Almacenamiento, todo cruzado por artículo.
 - `SupplierCategory` (categoría 1-4 + organización de cada proveedor) sigue
   el mismo patrón que `ExclusionRule`: se importa **una vez** desde otro
   Google Sheet (`manage.py import_supplier_categories`) y se manda por el
-  túnel en cada consulta — el agente no vuelve a tocar Google Sheets.
+  túnel en cada consulta — el agente no vuelve a tocar Google Sheets. A
+  partir de esa carga inicial, se edita (añadir/editar/borrar) desde una
+  sección propia en `/gateway/config/` — sin volver a tocar el Google Sheet
+  ni el admin de Django. Cada fila se puede editar in-place (inputs con
+  atributo `form="sc-save-<id>"`, ya que un `<form>` no puede anidar `<td>`
+  de forma válida).
 - Los umbrales de "Volumetría" (para clasificar PEQUEÑO/MEDIO/GRANDE/EXTRA)
   son constantes fijas en `edge_agent/stock_tabla.py::VOLUMETRIA`, no una
   consulta — si cambian, se edita ahí.

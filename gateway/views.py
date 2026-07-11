@@ -169,6 +169,7 @@ def config_view(request):
     return render(request, 'gateway/config.html', {
         'articulos': rules.filter(tipo=ExclusionRule.Tipo.ARTICULO),
         'familias': rules.filter(tipo=ExclusionRule.Tipo.FAMILIA),
+        'supplier_categories': SupplierCategory.objects.filter(activo=True),
     })
 
 
@@ -188,4 +189,33 @@ def config_add_rule(request):
 @require_POST
 def config_delete_rule(request, rule_id):
     ExclusionRule.objects.filter(pk=rule_id).update(activo=False)
+    return redirect('gateway:config')
+
+
+@staff_required
+@require_POST
+def config_save_supplier_category(request):
+    supplier_id = request.POST.get('id')
+    codpro = (request.POST.get('codpro') or '').strip()
+    organizacion = (request.POST.get('organizacion') or '').strip()
+    categoria_raw = (request.POST.get('categoria') or '').strip()
+
+    if codpro and categoria_raw.isdigit():
+        categoria = int(categoria_raw)
+        if supplier_id:
+            SupplierCategory.objects.filter(pk=supplier_id).update(
+                codpro=codpro, organizacion=organizacion, categoria=categoria,
+            )
+        else:
+            SupplierCategory.objects.update_or_create(
+                codpro=codpro,
+                defaults={'organizacion': organizacion, 'categoria': categoria, 'activo': True},
+            )
+    return redirect('gateway:config')
+
+
+@staff_required
+@require_POST
+def config_delete_supplier_category(request, supplier_id):
+    SupplierCategory.objects.filter(pk=supplier_id).update(activo=False)
     return redirect('gateway:config')
