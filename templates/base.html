@@ -13,8 +13,10 @@
     {% if request.user.is_authenticated %}
     <nav class="sidebar">
         <a class="sidebar__brand" href="{% url 'gateway:home' %}">
-            {# Ruta fija (sin pasar por {% templatetag openblock %}static{% templatetag closeblock %}/manifest):
-               un logo que falte no debe tumbar la página entera con un 500. #}
+            {% comment %}
+            Ruta fija (sin pasar por el manifest de static): un logo que
+            falte no debe tumbar la página entera con un 500.
+            {% endcomment %}
             <img class="sidebar__logo" src="/static/img/Spsil_logo_web.webp" alt="SPSIL" onerror="this.style.display='none'">
             SPSIL
         </a>
