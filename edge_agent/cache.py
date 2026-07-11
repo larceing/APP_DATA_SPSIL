@@ -24,11 +24,13 @@ async def refresh_loop(name, compute_fn, interval_seconds):
     """
     loop = asyncio.get_running_loop()
     while True:
+        inicio = loop.time()
         try:
             data = await loop.run_in_executor(None, compute_fn)
             _STORE[name] = {'data': data, 'updated_at': datetime.datetime.utcnow()}
+            log.info('Caché %s actualizada: %d filas en %.1fs', name, len(data), loop.time() - inicio)
         except Exception:
-            log.exception('Error refrescando caché %s', name)
+            log.exception('Error refrescando caché %s (tras %.1fs)', name, loop.time() - inicio)
         await asyncio.sleep(interval_seconds)
 
 
