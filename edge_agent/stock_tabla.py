@@ -13,6 +13,8 @@ añadir una dependencia pesada solo por comodidad.
 """
 
 import datetime
+import logging
+import time
 
 import pymysql
 import pytds
@@ -21,6 +23,8 @@ import cache
 from db import ID_ALMACEN, ID_CENTRO, MARIADB_DATABASE, MARIADB_HOST, MARIADB_PASSWORD, MARIADB_PORT, MARIADB_USER
 from db import MSSQL_DATABASE, MSSQL_HOST, MSSQL_PASSWORD, MSSQL_USER
 from db import _normalize
+
+log = logging.getLogger('edge_agent')
 
 # Umbrales de tamaño (Volumetría), fijos — no vienen de ninguna BD.
 VOLUMETRIA = {
@@ -98,60 +102,105 @@ def _query_stock_raw():
         conn.close()
 
 
-_VENTAS_SQL = """
-SELECT distinct
-    codArt,
-    YEAR(LINEOFER.FECHA) AS Anio,
-    MONTH(LINEOFER.FECHA) AS Mes,
-    SUM(unidades) AS TotalUnidades,
-    RANK() over (PARTITION by codArt ORDER BY SUM(UNIDADES) DESC, YEAR(LINEOFER.FECHA) DESC, MONTH(LINEOFER.FECHA) DESC) AS Rango
+_VENTAS_MES_SQL = """
+SELECT codArt, SUM(unidades) AS TotalUnidades
 FROM lineofer
-WHERE
-    idofev IS NOT NULL
-    AND unidades > 0 AND COMVEN = 'V'
-    AND LINEOFER.FECHA >= %s AND LINEOFER.FECHA < %s
-GROUP BY codArt, YEAR(LINEOFER.FECHA), MONTH(LINEOFER.FECHA)
+WHERE idofev IS NOT NULL AND unidades > 0 AND COMVEN = 'V'
+  AND FECHA >= %s AND FECHA < %s
+GROUP BY codArt
 """
 
+# Estado incremental de ventas: (codart, año, mes) -> unidades vendidas.
+# Se carga entero una sola vez (_cargar_ventas_base, al arrancar el
+# agente) y luego cada ciclo de refresco solo sustituye el mes en curso
+# (_refrescar_ventas_mes_actual) — nunca se vuelve a escanear el año
+# completo. Los meses ya cerrados no cambian, así que no hace falta
+# tocarlos de nuevo.
+_VENTAS_ESTADO = {'por_mes': {}, 'cargado': False}
 
-def _query_mejores_ventas(anio):
-    """Media de los 3 mejores meses de venta de ese año, por artículo
-    (mismo SQL que el Power BI original, con RANK() ya en el propio SQL
-    Server; aquí solo se filtra Rango<=3 y se agrupa, igual que el M).
 
-    El filtro por rango de fechas (en vez de YEAR(FECHA) = %s) es
-    deliberado: envolver la columna en una función impide a SQL Server
-    usar cualquier índice sobre FECHA y fuerza un escaneo completo de
-    LINEOFER (~8M filas); con un rango explícito sí puede hacer seek.
-    """
-    desde = datetime.date(anio, 1, 1)
-    hasta = datetime.date(anio + 1, 1, 1)
+def _rango_mes(anio, mes):
+    desde = datetime.date(anio, mes, 1)
+    hasta = datetime.date(anio + 1, 1, 1) if mes == 12 else datetime.date(anio, mes + 1, 1)
+    return desde, hasta
+
+
+def _query_ventas_mes(anio, mes):
+    """Unidades vendidas por artículo en un único mes (consulta barata:
+    rango de fechas sargable, agrupado por artículo, sin RANK())."""
+    desde, hasta = _rango_mes(anio, mes)
     conn = _mssql_connect()
     try:
         with conn.cursor() as cur:
-            cur.execute(_VENTAS_SQL, (desde, hasta))
-            filas = cur.fetchall()
+            cur.execute(_VENTAS_MES_SQL, (desde, hasta))
+            return {_normalize(codart): float(total or 0) for codart, total in cur.fetchall() if codart}
     finally:
         conn.close()
 
+
+def _meses_a_cargar():
+    """Todo el año anterior (cerrado) + el año actual hasta el mes de
+    hoy — el mismo rango que antes cubría la consulta de RANK() sobre
+    los dos años, pero mes a mes."""
+    hoy = datetime.date.today()
+    meses = [(hoy.year - 1, mes) for mes in range(1, 13)]
+    meses += [(hoy.year, mes) for mes in range(1, hoy.month + 1)]
+    return meses
+
+
+def _cargar_ventas_base():
+    """Carga completa mes a mes. Solo se ejecuta una vez (primer ciclo
+    tras arrancar el agente); puede tardar, no hay problema porque no
+    bloquea ninguna petición — corre en segundo plano."""
+    por_mes = {}
+    for anio, mes in _meses_a_cargar():
+        for codart, total in _query_ventas_mes(anio, mes).items():
+            por_mes[(codart, anio, mes)] = total
+    _VENTAS_ESTADO['por_mes'] = por_mes
+    _VENTAS_ESTADO['cargado'] = True
+
+
+def _refrescar_ventas_mes_actual():
+    """Sustituye (no suma) el mes en curso por su valor real más
+    reciente. Al reemplazar en vez de sumar, un artículo que ya no vende
+    no se queda con un número inflado, y no hay riesgo de contar dos
+    veces la misma venta entre un ciclo y el siguiente."""
+    hoy = datetime.date.today()
+    frescos = _query_ventas_mes(hoy.year, hoy.month)
+    por_mes = _VENTAS_ESTADO['por_mes']
+    for clave in [k for k in por_mes if k[1] == hoy.year and k[2] == hoy.month]:
+        del por_mes[clave]
+    for codart, total in frescos.items():
+        por_mes[(codart, hoy.year, hoy.month)] = total
+
+
+def _actualizar_ventas():
+    if not _VENTAS_ESTADO['cargado']:
+        _cargar_ventas_base()
+    else:
+        _refrescar_ventas_mes_actual()
+
+
+def _mejores_ventas_por_articulo(anio):
+    """Media de los 3 mejores meses de venta de `anio`, por artículo —
+    mismo cálculo que el Power BI original (RoundUp(suma top-3 / 3)),
+    pero calculado en Python sobre el estado ya cargado en memoria, sin
+    ninguna consulta a BD."""
     por_articulo = {}
-    for cod_art, anio_fila, mes, total_unidades, rango in filas:
-        if rango > 3:
+    for (codart, anio_fila, mes), total in _VENTAS_ESTADO['por_mes'].items():
+        if anio_fila != anio:
             continue
-        clave = _normalize(cod_art)
-        por_articulo.setdefault(clave, []).append({
-            'anio': anio_fila, 'mes': mes, 'unidades': total_unidades, 'rango': rango,
-        })
+        por_articulo.setdefault(codart, []).append((mes, total))
 
     resultado = {}
-    for clave, meses in por_articulo.items():
-        media = -(-sum(m['unidades'] for m in meses) // 3)  # RoundUp(suma/3)
-        mejor = next(m for m in meses if m['rango'] == 1)
-        resultado[clave] = {
-            'ventas': media,
-            'mejor_mes': mejor['mes'],
-            'mejor_anio': mejor['anio'],
-            'mejor_venta': mejor['unidades'],
+    for codart, meses in por_articulo.items():
+        top3 = sorted(meses, key=lambda par: (-par[1], -par[0]))[:3]
+        mejor_mes, mejor_venta = top3[0]
+        resultado[codart] = {
+            'ventas': -(-sum(total for _, total in top3) // 3),  # RoundUp(suma/3)
+            'mejor_mes': mejor_mes,
+            'mejor_anio': anio,
+            'mejor_venta': mejor_venta,
         }
     return resultado
 
@@ -238,11 +287,20 @@ def _compute_base_data():
     build_rows). Es la función pesada que refresca cache.refresh_loop en
     segundo plano — nunca se llama en el camino crítico de una petición.
     """
+    t0 = time.monotonic()
     stock = _query_stock_raw()
+    t1 = time.monotonic()
+    _actualizar_ventas()
     anio_actual = datetime.date.today().year
-    ventas_actual = _query_mejores_ventas(anio_actual)
-    ventas_anterior = _query_mejores_ventas(anio_actual - 1)
+    ventas_actual = _mejores_ventas_por_articulo(anio_actual)
+    ventas_anterior = _mejores_ventas_por_articulo(anio_actual - 1)
+    t2 = time.monotonic()
     agrupacion, etiquetado = _query_agrupacion_y_etiquetado()
+    t3 = time.monotonic()
+    log.info(
+        'stock_raw=%.1fs ventas=%.1fs agrupacion_etiquetado=%.1fs',
+        t1 - t0, t2 - t1, t3 - t2,
+    )
 
     base_rows = []
     for codart, base in stock.items():
