@@ -1,15 +1,18 @@
 import asyncio
+import functools
 import json
 import logging
 import os
 
 import websockets
 
+import cache
 from db import get_stock_actual
-from stock_tabla import get_stock_tabla
+from stock_tabla import _compute_base_data, get_stock_tabla
 
 GATEWAY_URL = os.environ['GATEWAY_URL']  # p.ej. wss://y.example.com/ws/gateway/nave-central/
 NODE_TOKEN = os.environ['NODE_TOKEN']
+STOCK_TABLA_REFRESH_SECONDS = int(os.environ.get('STOCK_TABLA_REFRESH_SECONDS', '15'))
 
 QUERY_HANDLERS = {
     'stock_actual': get_stock_actual,
@@ -26,7 +29,12 @@ async def handle_message(ws, raw_message):
         if handler is None:
             reply = {'request_id': message['request_id'], 'ok': False, 'rows': [], 'error': 'unknown_query'}
         else:
-            rows = handler(**message.get('params', {}))
+            # run_in_executor: una consulta bloqueante (pymysql/pytds) no
+            # debe congelar la recepción de otros mensajes por el mismo
+            # WebSocket mientras se resuelve.
+            loop = asyncio.get_running_loop()
+            call = functools.partial(handler, **message.get('params', {}))
+            rows = await loop.run_in_executor(None, call)
             reply = {'request_id': message['request_id'], 'ok': True, 'rows': rows, 'error': None}
     except Exception as exc:
         log.exception('Error resolviendo query %s', message.get('query'))
@@ -50,6 +58,13 @@ async def run():
             backoff = min(backoff * 2, 60)
 
 
+async def main():
+    await asyncio.gather(
+        run(),
+        cache.refresh_loop('stock_tabla_base', _compute_base_data, STOCK_TABLA_REFRESH_SECONDS),
+    )
+
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-    asyncio.run(run())
+    asyncio.run(main())

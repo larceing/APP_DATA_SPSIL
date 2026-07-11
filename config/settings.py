@@ -165,9 +165,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels.layers.InMemoryChannelLayer',
-        'CONFIG': {
-            'expiry': 120,  # > STOCK_TABLA_TIMEOUT (gateway/views.py), da margen a consultas largas
-        },
     },
 }
 

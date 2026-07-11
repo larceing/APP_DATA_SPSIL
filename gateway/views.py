@@ -15,7 +15,6 @@ from .models import ExclusionRule, GatewayNode, SupplierCategory
 from .permissions import page_required
 
 REQUEST_TIMEOUT = 20  # segundos: el agente encadena varias consultas SQL
-STOCK_TABLA_TIMEOUT = 60  # Stock Tabla encadena bastantes más consultas que Stock
 
 staff_required = user_passes_test(lambda u: u.is_staff)
 
@@ -76,9 +75,7 @@ def _fetch_stock_tabla_rows():
     supplier_categories = list(
         SupplierCategory.objects.filter(activo=True).values('codpro', 'organizacion', 'categoria')
     )
-    return _ask_gateway(
-        'stock_tabla', {'supplier_categories': supplier_categories}, timeout=STOCK_TABLA_TIMEOUT,
-    )
+    return _ask_gateway('stock_tabla', {'supplier_categories': supplier_categories})
 
 
 @login_required

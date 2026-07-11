@@ -17,6 +17,7 @@ import datetime
 import pymysql
 import pytds
 
+import cache
 from db import ID_ALMACEN, ID_CENTRO, MARIADB_DATABASE, MARIADB_HOST, MARIADB_PASSWORD, MARIADB_PORT, MARIADB_USER
 from db import MSSQL_DATABASE, MSSQL_HOST, MSSQL_PASSWORD, MSSQL_USER
 from db import _normalize
@@ -107,7 +108,8 @@ SELECT distinct
 FROM lineofer
 WHERE
     idofev IS NOT NULL
-    AND unidades > 0 AND YEAR(LINEOFER.FECHA) = %s and COMVEN = 'V'
+    AND unidades > 0 AND COMVEN = 'V'
+    AND LINEOFER.FECHA >= %s AND LINEOFER.FECHA < %s
 GROUP BY codArt, YEAR(LINEOFER.FECHA), MONTH(LINEOFER.FECHA)
 """
 
@@ -115,11 +117,19 @@ GROUP BY codArt, YEAR(LINEOFER.FECHA), MONTH(LINEOFER.FECHA)
 def _query_mejores_ventas(anio):
     """Media de los 3 mejores meses de venta de ese año, por artículo
     (mismo SQL que el Power BI original, con RANK() ya en el propio SQL
-    Server; aquí solo se filtra Rango<=3 y se agrupa, igual que el M)."""
+    Server; aquí solo se filtra Rango<=3 y se agrupa, igual que el M).
+
+    El filtro por rango de fechas (en vez de YEAR(FECHA) = %s) es
+    deliberado: envolver la columna en una función impide a SQL Server
+    usar cualquier índice sobre FECHA y fuerza un escaneo completo de
+    LINEOFER (~8M filas); con un rango explícito sí puede hacer seek.
+    """
+    desde = datetime.date(anio, 1, 1)
+    hasta = datetime.date(anio + 1, 1, 1)
     conn = _mssql_connect()
     try:
         with conn.cursor() as cur:
-            cur.execute(_VENTAS_SQL, (anio,))
+            cur.execute(_VENTAS_SQL, (desde, hasta))
             filas = cur.fetchall()
     finally:
         conn.close()
@@ -221,32 +231,21 @@ def _calcular_size(id_articulo, descripcion, familia, stock_min_semanal):
     return 'EXTRA'
 
 
-def get_stock_tabla(supplier_categories=None, **params):
-    """Combina todas las fuentes por artículo y calcula las columnas
-    derivadas (stock+reserva, ratios, punto de pedido, tamaño...). Réplica
-    de la consulta final del Power Query (paso "Tipos finales corregidos").
+def _compute_base_data():
+    """Combina stock, ventas y agrupación/etiquetado por artículo: toda la
+    parte que depende de consultas a BD (SQL Server + MariaDB) y no de la
+    categoría de proveedor (que llega por petición desde servidor Y, ver
+    build_rows). Es la función pesada que refresca cache.refresh_loop en
+    segundo plano — nunca se llama en el camino crítico de una petición.
     """
-    categorias = {
-        _normalize(row.get('codpro')): {
-            'categoria': int(row.get('categoria') or 0),
-            'organizacion': row.get('organizacion') or '',
-        }
-        for row in (supplier_categories or [])
-    }
-
     stock = _query_stock_raw()
     anio_actual = datetime.date.today().year
     ventas_actual = _query_mejores_ventas(anio_actual)
     ventas_anterior = _query_mejores_ventas(anio_actual - 1)
     agrupacion, etiquetado = _query_agrupacion_y_etiquetado()
 
-    rows = []
+    base_rows = []
     for codart, base in stock.items():
-        cat_info = categorias.get(_normalize(base['CODPRO']), {})
-        categoria = cat_info.get('categoria', 0)
-        organizacion = cat_info.get('organizacion', '')
-        mult = MULTIPLICADORES.get(categoria, MULTIPLICADOR_DEFECTO)
-
         clave_ventas = base['Cod. Articulo'] or codart
         v_actual = ventas_actual.get(clave_ventas, {})
         v_anterior = ventas_anterior.get(clave_ventas, {})
@@ -257,46 +256,24 @@ def get_stock_tabla(supplier_categories=None, **params):
             'Últimos 30 días' if base['UndPtos Ultimo 30 dias'] >= media_ventas_anio_anterior else 'Año anterior'
         )
 
-        stock_min = round(media_base_stock * mult['min'])
-        stock_max = round(media_base_stock * mult['max'])
-        punto_pedido = round(media_base_stock * mult['punto'])
-
         stock_reserva_a = base['Stock Total'] + base['Reservas']
         stock_reserva_b = base['Stock Total'] + base['Reserva B']
         stock_reserva_a_b = stock_reserva_a + base['Reserva B']
-
-        ratio_stock_min = round(stock_reserva_b / stock_min, 2) if stock_min else 0
-        diferencial_cantidad_pedido = 0
-        if stock_reserva_a_b < punto_pedido:
-            diferencial_cantidad_pedido = (
-                (stock_max - stock_reserva_a_b) if categoria == 2 else (punto_pedido - stock_reserva_a_b)
-            )
-
-        dias_periodo = mult['min'] * 30
-        stock_min_semanal = round((stock_min / dias_periodo if dias_periodo else 0) * 7)
 
         grupo_agr = agrupacion.get(codart, {'Picking': 0.0, 'Almacenamiento': 0.0})
         total_stock_ita = grupo_agr['Picking'] + grupo_agr['Almacenamiento']
         stock_inn_reserva_a = total_stock_ita + base['Reservas']
         stock_inn_reserva_b = total_stock_ita + base['Reserva B']
         stock_inn_reserva_a_b = stock_inn_reserva_a + base['Reserva B']
-        ratio_stock_min_inn = round(stock_inn_reserva_b / stock_min, 2) if stock_min else 0
-        diferencial_cantidad_pedido_inn = 0
-        if stock_inn_reserva_a_b < punto_pedido:
-            diferencial_cantidad_pedido_inn = (
-                (stock_max - stock_inn_reserva_a_b) if categoria == 2 else (punto_pedido - stock_inn_reserva_a_b)
-            )
 
         etiquetas = etiquetado.get(codart, {})
 
-        rows.append({
+        base_rows.append({
             'CODPRO': base['CODPRO'],
             'CODART': base['CODART'],
             'CODDESCART': f'{base["CODART"]} - {base["Descripcion"]}',
             'Descripcion': base['Descripcion'],
             'Familia': base['Familia'],
-            'Categoria_Organizacion': organizacion,
-            'Categoria_Proveedor': categoria,
             'Stock_Almacen_1': base['Stock Almacen 1'],
             'Stock_Almacen_ASPE': base['Stock Almacen ASPE'],
             'Stock_Almacen_Toledo': base['Stock Almacen Toledo'],
@@ -311,16 +288,9 @@ def get_stock_tabla(supplier_categories=None, **params):
             'Media_Ventas_Anio_Anterior': media_ventas_anio_anterior,
             'Media_Base_Stock': media_base_stock,
             'Origen_Media_Base_Stock': origen_media_base_stock,
-            'StockMin': stock_min,
-            'StockMax': stock_max,
-            'PuntoPedido': punto_pedido,
             'Stock_mas_Reserva_A': stock_reserva_a,
             'Stock_mas_Reserva_B': stock_reserva_b,
             'Stock_mas_Reserva_A_mas_B': stock_reserva_a_b,
-            'Ratio_Stock_Min': ratio_stock_min,
-            'Diferencial_Cantidad_Pedido_A3': diferencial_cantidad_pedido,
-            'Stock_Total_dividido_StockMin': round(base['Stock Total'] / stock_min, 2) if stock_min else 0,
-            'StockMin_Semanal': stock_min_semanal,
             'Picking': grupo_agr['Picking'],
             'Almacenamiento': grupo_agr['Almacenamiento'],
             'Stock_Total_Innertia': total_stock_ita,
@@ -328,13 +298,86 @@ def get_stock_tabla(supplier_categories=None, **params):
             'Stock_Inn_mas_Reserva_A': stock_inn_reserva_a,
             'Stock_Inn_mas_Reserva_B': stock_inn_reserva_b,
             'Stock_Inn_mas_Reserva_A_mas_B': stock_inn_reserva_a_b,
-            'Ratio_Stock_Min_Innertia': ratio_stock_min_inn,
-            'Diferencial_Cantidad_Pedido_Innertia': diferencial_cantidad_pedido_inn,
-            'Stock_Innertia_dividido_StockMin': round(total_stock_ita / stock_min, 2) if stock_min else 0,
-            'SIZE': _calcular_size(codart, base['Descripcion'], base['Familia'], stock_min_semanal),
             'Etiquetas_Picking': etiquetas.get('Etiquetas_Picking'),
             'Etiquetas_Almacenamiento': etiquetas.get('Etiquetas_Almacenamiento'),
+        })
+    return base_rows
+
+
+def build_rows(base_data, supplier_categories=None):
+    """Aplica el multiplicador de categoría de proveedor (StockMin/Max/
+    PuntoPedido, ratios, diferenciales, SIZE...) sobre la base ya
+    precalculada por _compute_base_data(). Cálculo puro en memoria, sin
+    ninguna consulta a BD — esta es la parte que sí corre en el camino
+    crítico de cada petición, y por eso tiene que ser barata.
+    """
+    categorias = {
+        _normalize(row.get('codpro')): {
+            'categoria': int(row.get('categoria') or 0),
+            'organizacion': row.get('organizacion') or '',
+        }
+        for row in (supplier_categories or [])
+    }
+
+    rows = []
+    for base in base_data:
+        cat_info = categorias.get(_normalize(base['CODPRO']), {})
+        categoria = cat_info.get('categoria', 0)
+        organizacion = cat_info.get('organizacion', '')
+        mult = MULTIPLICADORES.get(categoria, MULTIPLICADOR_DEFECTO)
+
+        media_base_stock = base['Media_Base_Stock']
+        stock_min = round(media_base_stock * mult['min'])
+        stock_max = round(media_base_stock * mult['max'])
+        punto_pedido = round(media_base_stock * mult['punto'])
+
+        ratio_stock_min = round(base['Stock_mas_Reserva_B'] / stock_min, 2) if stock_min else 0
+        diferencial_cantidad_pedido = 0
+        if base['Stock_mas_Reserva_A_mas_B'] < punto_pedido:
+            diferencial_cantidad_pedido = (
+                (stock_max - base['Stock_mas_Reserva_A_mas_B']) if categoria == 2
+                else (punto_pedido - base['Stock_mas_Reserva_A_mas_B'])
+            )
+
+        dias_periodo = mult['min'] * 30
+        stock_min_semanal = round((stock_min / dias_periodo if dias_periodo else 0) * 7)
+
+        ratio_stock_min_inn = round(base['Stock_Inn_mas_Reserva_B'] / stock_min, 2) if stock_min else 0
+        diferencial_cantidad_pedido_inn = 0
+        if base['Stock_Inn_mas_Reserva_A_mas_B'] < punto_pedido:
+            diferencial_cantidad_pedido_inn = (
+                (stock_max - base['Stock_Inn_mas_Reserva_A_mas_B']) if categoria == 2
+                else (punto_pedido - base['Stock_Inn_mas_Reserva_A_mas_B'])
+            )
+
+        rows.append({
+            **base,
+            'Categoria_Organizacion': organizacion,
+            'Categoria_Proveedor': categoria,
+            'StockMin': stock_min,
+            'StockMax': stock_max,
+            'PuntoPedido': punto_pedido,
+            'Ratio_Stock_Min': ratio_stock_min,
+            'Diferencial_Cantidad_Pedido_A3': diferencial_cantidad_pedido,
+            'Stock_Total_dividido_StockMin': round(base['Stock_Total'] / stock_min, 2) if stock_min else 0,
+            'StockMin_Semanal': stock_min_semanal,
+            'Ratio_Stock_Min_Innertia': ratio_stock_min_inn,
+            'Diferencial_Cantidad_Pedido_Innertia': diferencial_cantidad_pedido_inn,
+            'Stock_Innertia_dividido_StockMin': round(base['Stock_Total_Innertia'] / stock_min, 2) if stock_min else 0,
+            'SIZE': _calcular_size(base['CODART'], base['Descripcion'], base['Familia'], stock_min_semanal),
         })
 
     rows.sort(key=lambda r: r['CODART'] or '')
     return rows
+
+
+def get_stock_tabla(supplier_categories=None, **params):
+    """Handler registrado en agent.py para la query 'stock_tabla': lee la
+    base ya precalculada en segundo plano (ver cache.py) y le aplica la
+    categoría de proveedor. Nunca toca la BD aquí — si el agente acaba de
+    arrancar y todavía no hay ni un ciclo de refresco completo, informa de
+    ello en vez de bloquear la petición esperando una consulta pesada."""
+    entry = cache.get('stock_tabla_base')
+    if entry is None:
+        raise RuntimeError('cache_warming')
+    return build_rows(entry['data'], supplier_categories)
