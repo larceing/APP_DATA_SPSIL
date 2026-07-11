@@ -90,6 +90,19 @@ document.getElementById('filtro-busqueda').addEventListener('input', aplicarFilt
 document.getElementById('filtro-categoria').addEventListener('change', aplicarFiltros);
 document.getElementById('filtro-familia').addEventListener('change', aplicarFiltros);
 
+function esperar(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pedirStockTabla() {
+    const response = await fetch("{% url 'gateway:stock_tabla_api' %}");
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.error || String(response.status));
+    }
+    return data;
+}
+
 document.getElementById('btn-stock-tabla').addEventListener('click', async function () {
     const button = this;
     const errorEl = document.getElementById('stock-tabla-error');
@@ -97,14 +110,16 @@ document.getElementById('btn-stock-tabla').addEventListener('click', async funct
     button.disabled = true;
     errorEl.style.display = 'none';
 
+    // Un corte breve del túnel (reconexión del agente) puede perder una
+    // petición puntual aunque la caché en sí esté sana; un reintento
+    // automático evita que el usuario tenga que darle otra vez a mano.
     try {
-        const response = await fetch("{% url 'gateway:stock_tabla_api' %}");
-        const data = await response.json();
-
-        if (!response.ok) {
-            errorEl.textContent = '{% ui "gateway.stock.error_prefix" %}: ' + (data.error || response.status);
-            errorEl.style.display = 'block';
-            return;
+        let data;
+        try {
+            data = await pedirStockTabla();
+        } catch (primerError) {
+            await esperar(3000);
+            data = await pedirStockTabla();
         }
 
         filasTabla = data.rows;
@@ -116,7 +131,7 @@ document.getElementById('btn-stock-tabla').addEventListener('click', async funct
         }
         aplicarFiltros();
     } catch (err) {
-        errorEl.textContent = '{% ui "gateway.stock.error_prefix" %}: ' + err;
+        errorEl.textContent = '{% ui "gateway.stock.error_prefix" %}: ' + err.message;
         errorEl.style.display = 'block';
     } finally {
         button.disabled = false;
