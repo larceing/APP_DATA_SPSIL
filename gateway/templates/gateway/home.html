@@ -10,10 +10,12 @@
 </div>
 
 <div class="home-grid">
-    <a class="home-card" href="{% url 'gateway:stock' %}">
-        <div class="home-card__group">{% ui "gateway.nav.group_almacen" %}</div>
-        <div class="home-card__title">{% ui "gateway.nav.stock" %}</div>
+    {% for page in accessible_pages %}
+    <a class="home-card" href="{% url page.url_name %}">
+        <div class="home-card__group">{{ page.group_label }}</div>
+        <div class="home-card__title">{{ page.name }}</div>
     </a>
+    {% endfor %}
 
     {% if request.user.is_staff %}
     <a class="home-card" href="{% url 'gateway:config' %}">

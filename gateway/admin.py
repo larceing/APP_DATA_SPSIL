@@ -1,9 +1,11 @@
 import secrets
 
 from django.contrib import admin, messages
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .consumers import CONNECTED_NODES
-from .models import Department, ExclusionRule, GatewayNode, UserProfile
+from .models import Department, ExclusionRule, GatewayNode, Page, UserProfile
 
 
 @admin.register(GatewayNode)
@@ -45,13 +47,29 @@ class ExclusionRuleAdmin(admin.ModelAdmin):
     search_fields = ('valor',)
 
 
+@admin.register(Page)
+class PageAdmin(admin.ModelAdmin):
+    list_display = ('name', 'slug', 'group_label', 'url_name', 'order')
+    prepopulated_fields = {'slug': ('name',)}
+
+
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):
     list_display = ('name',)
     search_fields = ('name',)
+    filter_horizontal = ('pages',)
 
 
-@admin.register(UserProfile)
-class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'department')
-    list_filter = ('department',)
+class UserProfileInline(admin.StackedInline):
+    model = UserProfile
+    can_delete = False
+    filter_horizontal = ('extra_pages',)
+    fk_name = 'user'
+
+
+class UserAdmin(DjangoUserAdmin):
+    inlines = (UserProfileInline,)
+
+
+admin.site.unregister(get_user_model())
+admin.site.register(get_user_model(), UserAdmin)

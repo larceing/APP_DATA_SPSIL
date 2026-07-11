@@ -12,6 +12,7 @@ from openpyxl.utils import get_column_letter
 
 from .consumers import CONNECTED_NODES
 from .models import ExclusionRule, GatewayNode
+from .permissions import page_required
 
 REQUEST_TIMEOUT = 20  # segundos: el agente ahora encadena MariaDB + SQL Server
 
@@ -73,12 +74,12 @@ def home_view(request):
     return render(request, 'gateway/home.html')
 
 
-@login_required
+@page_required('stock')
 def stock_view(request):
     return render(request, 'gateway/stock.html')
 
 
-@login_required
+@page_required('stock')
 @require_GET
 def stock_actual_api(request):
     try:
@@ -88,7 +89,7 @@ def stock_actual_api(request):
     return JsonResponse({'rows': rows})
 
 
-@login_required
+@page_required('stock')
 @require_GET
 def stock_export_view(request):
     try:

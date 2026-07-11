@@ -81,6 +81,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'gateway.context_processors.gateway_status',
+                'gateway.context_processors.accessible_pages',
                 'core.context_processors.languages',
             ],
         },

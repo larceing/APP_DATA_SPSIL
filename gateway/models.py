@@ -55,11 +55,35 @@ class ExclusionRule(models.Model):
         super().save(*args, **kwargs)
 
 
+class Page(models.Model):
+    """Una página/informe del sidebar (hoy solo 'Stock'). El acceso se
+    concede por departamento (todos los miembros la ven) o suelto a un
+    usuario concreto (UserProfile.extra_pages), para casos tipo "Roger
+    es de Almacén pero también lleva Logística"."""
+
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(max_length=100, unique=True)
+    url_name = models.CharField(
+        max_length=100, help_text='Nombre de URL Django, ej. gateway:stock'
+    )
+    group_label = models.CharField(
+        max_length=100, help_text='Título del grupo en el sidebar, ej. Almacén'
+    )
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['group_label', 'order', 'name']
+
+    def __str__(self):
+        return self.name
+
+
 class Department(models.Model):
-    """Departamento de negocio. Todavía no se usa para filtrar datos: es el
-    hueco estructural para cuando haga falta segmentar por departamento."""
+    """Departamento de negocio: agrupa usuarios y las páginas que todos
+    sus miembros pueden ver."""
 
     name = models.CharField(max_length=100, unique=True)
+    pages = models.ManyToManyField(Page, blank=True, related_name='departments')
 
     class Meta:
         ordering = ['name']
@@ -70,7 +94,8 @@ class Department(models.Model):
 
 class UserProfile(models.Model):
     """Perfil ligado a un usuario de Django. El rol (usuario/admin/superadmin)
-    ya lo dan is_staff/is_superuser; este perfil solo añade el departamento."""
+    ya lo dan is_staff/is_superuser; este perfil añade el departamento (acceso
+    de grupo) y páginas sueltas concedidas solo a este usuario."""
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile'
@@ -78,6 +103,14 @@ class UserProfile(models.Model):
     department = models.ForeignKey(
         Department, null=True, blank=True, on_delete=models.SET_NULL, related_name='users'
     )
+    extra_pages = models.ManyToManyField(Page, blank=True, related_name='granted_profiles')
 
     def __str__(self):
         return self.user.get_username()
+
+    def accessible_pages(self):
+        pages = {page.id: page for page in self.extra_pages.all()}
+        if self.department_id:
+            for page in self.department.pages.all():
+                pages[page.id] = page
+        return sorted(pages.values(), key=lambda p: (p.group_label, p.order, p.name))

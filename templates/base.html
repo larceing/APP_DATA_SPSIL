@@ -26,11 +26,16 @@
                href="{% url 'gateway:home' %}">{% ui "gateway.nav.home" %}</a>
         </div>
 
+        {% regroup accessible_pages by group_label as page_groups %}
+        {% for group in page_groups %}
         <div class="sidebar__group">
-            <div class="sidebar__group-title">{% ui "gateway.nav.group_almacen" %}</div>
-            <a class="sidebar__link{% if request.resolver_match.url_name == 'stock' %} active{% endif %}"
-               href="{% url 'gateway:stock' %}">{% ui "gateway.nav.stock" %}</a>
+            <div class="sidebar__group-title">{{ group.grouper }}</div>
+            {% for page in group.list %}
+            <a class="sidebar__link{% if request.resolver_match.view_name == page.url_name %} active{% endif %}"
+               href="{% url page.url_name %}">{{ page.name }}</a>
+            {% endfor %}
         </div>
+        {% endfor %}
 
         {% if request.user.is_staff %}
         <div class="sidebar__group">

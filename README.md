@@ -27,8 +27,11 @@ hacia el servidor Y.
     `/gateway/config/` (Admin/Superadmin). Se carga una vez desde el Google
     Sheet de control con `manage.py import_exclusion_rules`; a partir de ahí
     no se vuelve a leer Google Sheets en marcha.
-  - `Department`/`UserProfile` — hueco estructural para cuando haga falta
-    segmentar por departamento (no se usa todavía para filtrar nada).
+  - `Page` — una página/informe del sidebar (hoy solo "Stock"). `Department`
+    agrupa usuarios y tiene un M2M a `Page` (todo el departamento ve esas
+    páginas); `UserProfile.extra_pages` concede páginas sueltas a un usuario
+    concreto además de las de su departamento (caso "Roger es de Almacén
+    pero también lleva Logística"). Ver sección "Permisos por página".
   - El consumer WebSocket (`gateway/consumers.py`) y la vista que pide datos
     y espera respuesta (`gateway/views.py`).
 - `edge_agent/` — el agente que corre en equipo X: se conecta al gateway,
@@ -49,6 +52,32 @@ Un Admin normal **no puede crear usuarios**: Django no da permisos `auth.*`
 a un `is_staff` no-superusuario a menos que se los asignes a mano, así que
 por construcción solo el superusuario puede dar de alta cuentas — no toques
 los permisos de `auth` de los Admin si quieres mantener esta restricción.
+
+## Permisos por página (Usuario)
+
+Admin y Superadmin ven **todas** las páginas siempre (bypass en
+`gateway/permissions.py::get_accessible_pages`). Para el rol Usuario, el
+acceso a cada `Page` (hoy solo "Stock") se decide así:
+
+1. **Por departamento**: en `/admin/gateway/department/`, cada `Department`
+   tiene un M2M a `Page` — todo usuario con ese departamento asignado ve
+   esas páginas.
+2. **Suelto por usuario**: en `/admin/auth/user/<id>/change/`, la sección
+   "User profile" (inline) tiene `extra_pages` — páginas concedidas solo a
+   ese usuario, además de las de su departamento. Para el caso "Roger es de
+   Almacén pero también lleva Logística": se le deja el departamento que
+   corresponda y se le añade la página de Logística ahí, sin tocar el
+   departamento de nadie más.
+
+El permiso se aplica de verdad en las vistas (`@page_required('stock')`),
+no solo se oculta el enlace del sidebar: entrar directo a `/gateway/stock/`
+sin acceso da **403**, no solo lo esconde del menú.
+
+Al desplegar este sistema (migración `gateway/0004_seed_stock_page.py`), se
+apadrina automáticamente a los usuarios "Usuario" que ya existieran antes,
+concediéndoles `extra_pages=[Stock]` — para que nadie se quede fuera en
+silencio. Los usuarios nuevos que se creen después no tienen ninguna página
+por defecto: hay que asignarles departamento o concesión suelta a mano.
 
 ## Interfaz
 
