@@ -8,11 +8,15 @@ import websockets
 
 import cache
 from db import get_stock_actual
-from stock_tabla import _compute_base_data, get_stock_tabla
+from stock_tabla import _refrescar_stock_raw, _refrescar_ventas_y_huecos, get_stock_tabla
 
 GATEWAY_URL = os.environ['GATEWAY_URL']  # p.ej. wss://y.example.com/ws/gateway/nave-central/
 NODE_TOKEN = os.environ['NODE_TOKEN']
+# Ventas/huecos ya son baratos (~1s): refresco frecuente. VW_OFERTAS_STOCK_RAW
+# se llama entera sin filtro (~26s) y no admite "mini updates" como ventas,
+# así que va en su propio ciclo, más espaciado, para no frenar lo demás.
 STOCK_TABLA_REFRESH_SECONDS = int(os.environ.get('STOCK_TABLA_REFRESH_SECONDS', '15'))
+STOCK_RAW_REFRESH_SECONDS = int(os.environ.get('STOCK_RAW_REFRESH_SECONDS', '30'))
 
 QUERY_HANDLERS = {
     'stock_actual': get_stock_actual,
@@ -69,7 +73,8 @@ async def run():
 async def main():
     await asyncio.gather(
         run(),
-        cache.refresh_loop('stock_tabla_base', _compute_base_data, STOCK_TABLA_REFRESH_SECONDS),
+        cache.refresh_loop('stock_raw', _refrescar_stock_raw, STOCK_RAW_REFRESH_SECONDS),
+        cache.refresh_loop('stock_tabla_ventas_huecos', _refrescar_ventas_y_huecos, STOCK_TABLA_REFRESH_SECONDS),
     )
 
 

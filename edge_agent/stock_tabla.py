@@ -274,38 +274,72 @@ def _calcular_size(id_articulo, descripcion, familia, stock_min_semanal):
     return 'EXTRA'
 
 
-def _compute_base_data():
-    """Combina stock, ventas, stock del WMS (Innertia) y el desglose por
-    tipo de hueco: toda la parte que depende de consultas a BD (SQL
-    Server + MariaDB) y no de configuración que llega por petición desde
-    servidor Y (categoría de proveedor, clasificación de tipos de hueco —
-    ver build_rows). Es la función pesada que refresca cache.refresh_loop
-    en segundo plano — nunca se llama en el camino crítico de una
-    petición.
-
-    Devuelve {'rows': [...], 'tipos_hueco_descubiertos': [...]} — la
-    segunda clave es la lista de TipoHueco.descripcion vistas en este
-    ciclo, para que servidor Y registre automáticamente las que no
-    conozca todavía en /gateway/config/tipos-hueco/.
-    """
+def _refrescar_stock_raw():
+    """compute_fn de la caché 'stock_raw' (ver agent.py): VW_OFERTAS_STOCK_RAW
+    se llama tal cual, sin filtro, y tarda ~26s en escanearse entera. No es
+    un histórico (no admite "mini updates del mes en curso" como ventas),
+    así que va en su propia caché con un ciclo más espaciado (30s por
+    defecto), independiente del de ventas/huecos (que ya es barato y
+    puede ir cada 15s) — así lo lento no frena lo rápido."""
     t0 = time.monotonic()
     stock = _query_stock_raw()
-    t1 = time.monotonic()
+    log.info('stock_raw=%.1fs', time.monotonic() - t0)
+    return stock
+
+
+def _refrescar_ventas_y_huecos():
+    """compute_fn de la caché 'stock_tabla_ventas_huecos': todo lo que ya
+    es barato de refrescar a menudo — ventas (incremental, ver
+    _actualizar_ventas), stock del WMS (Innertia) y el desglose por tipo
+    de hueco. Devuelve también tipos_hueco_descubiertos para que servidor
+    Y registre los tipos nuevos en /gateway/config/tipos-hueco/."""
+    t0 = time.monotonic()
     _actualizar_ventas()
     anio_actual = datetime.date.today().year
     ventas_actual = _mejores_ventas_por_articulo(anio_actual)
     ventas_anterior = _mejores_ventas_por_articulo(anio_actual - 1)
-    t2 = time.monotonic()
+    t1 = time.monotonic()
     stock_innertia = _query_stock_innertia()
-    t3 = time.monotonic()
+    t2 = time.monotonic()
     tipos_hueco_raw, etiquetas_raw = _query_agrupacion_y_etiquetado()
-    t4 = time.monotonic()
+    t3 = time.monotonic()
     log.info(
-        'stock_raw=%.1fs ventas=%.1fs stock_innertia=%.1fs tipos_hueco=%.1fs',
-        t1 - t0, t2 - t1, t3 - t2, t4 - t3,
+        'ventas=%.1fs stock_innertia=%.1fs tipos_hueco=%.1fs',
+        t1 - t0, t2 - t1, t3 - t2,
     )
-
     tipos_descubiertos = set()
+    for tipos in tipos_hueco_raw.values():
+        tipos_descubiertos.update(tipos.keys())
+    return {
+        'ventas_actual': ventas_actual,
+        'ventas_anterior': ventas_anterior,
+        'stock_innertia': stock_innertia,
+        'tipos_hueco_raw': tipos_hueco_raw,
+        'etiquetas_raw': etiquetas_raw,
+        'tipos_hueco_descubiertos': sorted(tipos_descubiertos),
+    }
+
+
+def _merge_base_data():
+    """Combina las dos cachés (stock_raw + ventas/huecos) en la lista de
+    filas base que usa build_rows. Cálculo puro en memoria — se llama en
+    el camino de la petición (get_stock_tabla), no en segundo plano;
+    fusionar ~2500 artículos es barato, lo caro ya está cacheado aparte.
+    Devuelve None si alguna de las dos cachés todavía no tiene datos.
+    """
+    entry_stock = cache.get('stock_raw')
+    entry_resto = cache.get('stock_tabla_ventas_huecos')
+    if entry_stock is None or entry_resto is None:
+        return None
+
+    stock = entry_stock['data']
+    resto = entry_resto['data']
+    ventas_actual = resto['ventas_actual']
+    ventas_anterior = resto['ventas_anterior']
+    stock_innertia = resto['stock_innertia']
+    tipos_hueco_raw = resto['tipos_hueco_raw']
+    etiquetas_raw = resto['etiquetas_raw']
+
     base_rows = []
     for codart, base in stock.items():
         clave_ventas = base['Cod. Articulo'] or codart
@@ -333,7 +367,6 @@ def _compute_base_data():
 
         tipos_articulo = tipos_hueco_raw.get(codart, {})
         etiquetas_articulo = etiquetas_raw.get(codart, {})
-        tipos_descubiertos.update(tipos_articulo.keys())
 
         base_rows.append({
             'CODPRO': base['CODPRO'],
@@ -366,7 +399,7 @@ def _compute_base_data():
             '_tipos_hueco_raw': tipos_articulo,
             '_etiquetas_raw': etiquetas_articulo,
         })
-    return {'rows': base_rows, 'tipos_hueco_descubiertos': sorted(tipos_descubiertos)}
+    return {'rows': base_rows, 'tipos_hueco_descubiertos': resto['tipos_hueco_descubiertos']}
 
 
 def _bucket_tipos_hueco(tipos_raw, mapeo_categoria):
@@ -472,17 +505,17 @@ def build_rows(base_data, supplier_categories=None, hueco_tipos=None):
 
 
 def get_stock_tabla(supplier_categories=None, hueco_tipos=None, **params):
-    """Handler registrado en agent.py para la query 'stock_tabla': lee la
-    base ya precalculada en segundo plano (ver cache.py) y le aplica la
-    configuración que llega por petición (categoría de proveedor,
-    clasificación de tipos de hueco). Nunca toca la BD aquí — si el
-    agente acaba de arrancar y todavía no hay ni un ciclo de refresco
-    completo, informa de ello en vez de bloquear la petición esperando
-    una consulta pesada."""
-    entry = cache.get('stock_tabla_base')
-    if entry is None:
+    """Handler registrado en agent.py para la query 'stock_tabla': fusiona
+    las dos cachés ya precalculadas en segundo plano (stock_raw cada 30s,
+    ventas/huecos cada 15s — ver agent.py) y les aplica la configuración
+    que llega por petición (categoría de proveedor, clasificación de
+    tipos de hueco). Nunca toca la BD aquí — si el agente acaba de
+    arrancar y todavía no hay ni un ciclo de cada caché completo, informa
+    de ello en vez de bloquear la petición esperando una consulta pesada.
+    """
+    data = _merge_base_data()
+    if data is None:
         raise RuntimeError('cache_warming')
-    data = entry['data']
     return {
         'rows': build_rows(data['rows'], supplier_categories, hueco_tipos),
         'tipos_hueco_descubiertos': data['tipos_hueco_descubiertos'],
