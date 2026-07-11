@@ -15,9 +15,13 @@ a {
     color: var(--color-primary);
 }
 
+html, body {
+    height: 100%;
+}
+
 .app-shell {
     display: flex;
-    min-height: 100vh;
+    height: 100vh;
 }
 
 .app-body {
@@ -25,16 +29,44 @@ a {
     min-width: 0;
     display: flex;
     flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
 }
 
 .sidebar {
     width: 220px;
     flex-shrink: 0;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: var(--color-brand-black);
     color: #fff;
     padding: var(--spacing-lg) 0;
     display: flex;
     flex-direction: column;
+    white-space: nowrap;
+    transition: width 0.15s ease, padding 0.15s ease;
+}
+
+.sidebar.collapsed {
+    width: 0;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.sidebar-toggle {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    cursor: pointer;
+}
+
+.sidebar-toggle:hover {
+    background: var(--color-bg);
 }
 
 .sidebar__brand {
@@ -91,7 +123,7 @@ a {
 .app-header {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    flex-shrink: 0;
     padding: var(--spacing-md) var(--spacing-lg);
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
@@ -174,6 +206,7 @@ select {
     display: flex;
     align-items: center;
     gap: var(--spacing-md);
+    margin-left: auto;
 }
 
 .lang-switcher {
