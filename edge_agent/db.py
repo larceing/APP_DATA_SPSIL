@@ -99,7 +99,14 @@ def query_hueco_breakdown(ubicaciones, tipos_excluidos=None):
     """Cruce ArticuloHuecoStock + Hueco + TipoHueco, compartido por Stock
     y Stock Tabla: desglose de stock por artículo en Picking (tipoHueco=1)
     y Almacenamiento (tipoHueco=2) — así los calcula el Power BI original
-    (FxSumaPorTipo con esos dos ids fijos, no una categorización nuestra).
+    (FxSumaPorTipo con esos dos ids fijos, no una categorización nuestra) —
+    más un `Total` que suma **todos** los tipos no excluidos (no solo 1 y
+    2), para poder incluir en el cálculo de stock cualquier otro tipo
+    (Carro, Carro Reposición...) marcado como incluido en
+    /gateway/config/tipos-hueco/, sin tener que tocar código: como el SQL
+    ya filtra por `tipos_excluidos`, cualquier fila que llega aquí es de
+    un tipo que el usuario ha marcado "Incluido", así que sumarlas todas
+    en `Total` refleja exactamente esa configuración.
 
     `ubicaciones`: [{'id_centro':6,'id_almacen':1,'id_zona':1}, ...] — se
     filtra por cualquiera de las combinaciones dadas (antes fijo por
@@ -111,7 +118,7 @@ def query_hueco_breakdown(ubicaciones, tipos_excluidos=None):
     un filtro de calidad de datos, no una decisión de negocio.
 
     Devuelve (breakdown, tipos_vistos):
-    - breakdown: {idArticulo: {'Picking':, 'Almacenamiento':,
+    - breakdown: {idArticulo: {'Total':, 'Picking':, 'Almacenamiento':,
       'Etiquetas_Picking':, 'Etiquetas_Almacenamiento':}}
     - tipos_vistos: [{'id_tipo_hueco':, 'descripcion':}, ...] — la tabla
       TipoHueco completa (~10 filas fijas), no solo los tipos que tengan
@@ -159,9 +166,10 @@ def query_hueco_breakdown(ubicaciones, tipos_excluidos=None):
         unidad1 = float(unidad1 or 0)
 
         fila = breakdown.setdefault(clave, {
-            'Picking': 0.0, 'Almacenamiento': 0.0,
+            'Total': 0.0, 'Picking': 0.0, 'Almacenamiento': 0.0,
             'Etiquetas_Picking': set(), 'Etiquetas_Almacenamiento': set(),
         })
+        fila['Total'] += unidad1
         if id_tipo_hueco == 1:
             fila['Picking'] += unidad1
             if etiqueta:
@@ -187,10 +195,13 @@ def get_stock_actual(exclusion_rules=None, ubicaciones=None, tipos_excluidos=Non
     códigos como "0"/"1"/"156" con stock negativo redondeado a 0 que nunca
     están en el informe real.
 
-    `Stock_Total` = Stock_Picking + Stock_Almacenamiento — así está
-    definida la medida "Stock Total" en el propio informe; Stock_Disponible
-    (StockDisponibleCentroAlmacen) no se usa para este cálculo en absoluto,
-    confirmado contra la medida real del informe.
+    `Stock_Total` suma **todos** los tipos de hueco marcados "Incluido" en
+    /gateway/config/tipos-hueco/ (por defecto solo Picking=1 y
+    Almacenamiento=2, que es como está definida la medida "Stock Total" en
+    el informe real) — no solo Picking+Almacenamiento fijos: así se puede
+    marcar temporalmente Carro/Carro Reposición/etc. para comprobar algo
+    sin tocar código. Stock_Disponible (StockDisponibleCentroAlmacen) no
+    se usa para este cálculo en absoluto.
 
     `ubicaciones`/`exclusion_rules`/`tipos_excluidos` llegan ya calculados
     desde servidor Y en cada petición — este agente no guarda nada en
@@ -217,14 +228,12 @@ def get_stock_actual(exclusion_rules=None, ubicaciones=None, tipos_excluidos=Non
         familia = familias.get(id_articulo, '')
         if id_articulo in codigos_excluidos or familia in familias_excluidas:
             continue
-        picking = hueco.get('Picking', 0.0)
-        almacenamiento = hueco.get('Almacenamiento', 0.0)
         rows.append({
             'idArticulo': id_articulo,
             'FAMILIA': familia,
-            'Stock_Total': picking + almacenamiento,
-            'Stock_Picking': picking,
-            'Stock_Almacenamiento': almacenamiento,
+            'Stock_Total': hueco.get('Total', 0.0),
+            'Stock_Picking': hueco.get('Picking', 0.0),
+            'Stock_Almacenamiento': hueco.get('Almacenamiento', 0.0),
             'Etiquetas_Picking': hueco.get('Etiquetas_Picking'),
             'Etiquetas_Almacenamiento': hueco.get('Etiquetas_Almacenamiento'),
         })
