@@ -179,13 +179,20 @@ def query_hueco_breakdown(ubicaciones, tipos_excluidos=None):
 
 
 def get_stock_actual(exclusion_rules=None, ubicaciones=None, tipos_excluidos=None, **params):
-    """Stock actual por artículo: Stock_Disponible (StockDisponibleCentroAlmacen)
-    + Stock_Picking/Stock_Almacenamiento/Etiquetas (query_hueco_breakdown)
-    + FAMILIA (dbo.ARTICULO), excluyendo los códigos/familias marcados
-    como regla de exclusión. `ubicaciones`/`exclusion_rules`/
-    `tipos_excluidos` llegan ya calculados desde servidor Y en cada
-    petición — este agente no guarda nada en disco ni habla con Google
-    Sheets, solo los usa en memoria para esta petición.
+    """Stock actual por artículo, igual que el M de "Almacen": el conjunto
+    que manda es el cruce de huecos (query_hueco_breakdown — INNER JOIN
+    ArticuloEstipulado x Hueco, JoinKind.Inner en el M), y Stock_Disponible
+    (StockDisponibleCentroAlmacen) se añade por encima como LEFT JOIN
+    (MergeStock, JoinKind.LeftOuter en el M) — no al revés. Un artículo con
+    saldo en StockDisponibleCentroAlmacen pero sin ningún hueco físico
+    asignado en las ubicaciones dadas no debe aparecer (así lo descarta el
+    INNER JOIN del M); de ahí salían códigos como "0"/"1"/"156" con stock
+    negativo redondeado a 0 que nunca están en el informe real.
+
+    `ubicaciones`/`exclusion_rules`/`tipos_excluidos` llegan ya calculados
+    desde servidor Y en cada petición — este agente no guarda nada en
+    disco ni habla con Google Sheets, solo los usa en memoria para esta
+    petición.
     """
     codigos_excluidos = set()
     familias_excluidas = set()
@@ -204,15 +211,14 @@ def get_stock_actual(exclusion_rules=None, ubicaciones=None, tipos_excluidos=Non
     huecos, tipos_vistos = query_hueco_breakdown(ubicaciones, tipos_excluidos)
 
     rows = []
-    for id_articulo, suma_stock in stock.items():
+    for id_articulo, hueco in huecos.items():
         familia = familias.get(id_articulo, '')
         if id_articulo in codigos_excluidos or familia in familias_excluidas:
             continue
-        hueco = huecos.get(id_articulo, {})
         rows.append({
             'idArticulo': id_articulo,
             'FAMILIA': familia,
-            'Stock_Disponible': suma_stock,
+            'Stock_Disponible': stock.get(id_articulo, 0.0),
             'Stock_Picking': hueco.get('Picking', 0.0),
             'Stock_Almacenamiento': hueco.get('Almacenamiento', 0.0),
             'Etiquetas_Picking': hueco.get('Etiquetas_Picking'),
