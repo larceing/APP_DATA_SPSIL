@@ -323,3 +323,24 @@ select {
 .warehouse-view td {
     padding: var(--spacing-md) !important;
 }
+
+.tab-lock-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.75);
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-lg);
+}
+
+.tab-lock-box {
+    background: var(--color-surface);
+    color: var(--color-text);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-xl);
+    max-width: 420px;
+    text-align: center;
+    box-shadow: var(--shadow-md);
+    font-size: 1.1rem;
+}

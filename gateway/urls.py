@@ -6,6 +6,7 @@ app_name = 'gateway'
 
 urlpatterns = [
     path('home/', views.home_view, name='home'),
+    path('tab-heartbeat/', views.tab_heartbeat_view, name='tab_heartbeat'),
     path('stock/', views.stock_view, name='stock'),
     path('stock/actual/', views.stock_actual_api, name='stock_actual_api'),
     path('stock/export/', views.stock_export_view, name='stock_export'),

@@ -17,3 +17,9 @@ def accessible_pages(request):
         return {'accessible_pages': [], 'accessible_page_slugs': set()}
     pages = get_accessible_pages(request.user)
     return {'accessible_pages': pages, 'accessible_page_slugs': {page.slug for page in pages}}
+
+
+def single_tab_only(request):
+    if not request.user.is_authenticated:
+        return {'single_tab_only': False}
+    return {'single_tab_only': getattr(getattr(request.user, 'profile', None), 'single_tab_only', False)}

@@ -178,6 +178,10 @@ class UserProfile(models.Model):
         Department, null=True, blank=True, on_delete=models.SET_NULL, related_name='users'
     )
     extra_pages = models.ManyToManyField(Page, blank=True, related_name='granted_profiles')
+    single_tab_only = models.BooleanField(
+        default=False,
+        help_text='Bloquea usar la app en más de una pestaña/ventana a la vez con esta cuenta.',
+    )
 
     def __str__(self):
         return self.user.get_username()

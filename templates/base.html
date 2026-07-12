@@ -112,6 +112,60 @@
         </main>
     </div>
 </div>
+
+{% if single_tab_only %}
+{% comment %}
+Cuenta marcada single_tab_only en su perfil: bloquea el uso simultáneo
+en más de una pestaña/ventana. sessionStorage es lo único que NO se
+comparte entre pestañas del mismo navegador (a diferencia de cookies o
+localStorage), así que sirve para darle a cada pestaña una identidad
+propia; un latido periódico al servidor (gateway/tabs.py) decide cuál
+es "la" pestaña activa.
+{% endcomment %}
+<div id="tab-lock-overlay" class="tab-lock-overlay" style="display:none;">
+    <div class="tab-lock-box">
+        <p>{% ui "gateway.tabs.blocked_message" %}</p>
+    </div>
+</div>
+<script>
+(function () {
+    var STORAGE_KEY = 'spsil_tab_id';
+    var tabId = sessionStorage.getItem(STORAGE_KEY);
+    if (!tabId) {
+        tabId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random());
+        sessionStorage.setItem(STORAGE_KEY, tabId);
+    }
+
+    var csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+    var overlay = document.getElementById('tab-lock-overlay');
+
+    function latido() {
+        var body = new URLSearchParams();
+        body.set('tab_id', tabId);
+        fetch("{% url 'gateway:tab_heartbeat' %}", {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfInput ? csrfInput.value : '',
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: body.toString(),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                overlay.style.display = data.ok ? 'none' : 'flex';
+            })
+            .catch(function () {});
+    }
+
+    latido();
+    setInterval(latido, 5000);
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) latido();
+    });
+})();
+</script>
+{% endif %}
+
 <script>
 (function () {
     var sidebar = document.getElementById('sidebar');

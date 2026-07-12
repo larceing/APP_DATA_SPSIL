@@ -13,6 +13,7 @@ from django.views.decorators.http import require_GET, require_POST
 from .consumers import CONNECTED_NODES
 from .models import ExclusionRule, GatewayNode, HuecoTipoCategoria, SupplierCategory, UbicacionAlmacen
 from .permissions import page_required
+from .tabs import check_and_register
 
 REQUEST_TIMEOUT = 20  # segundos: el agente encadena varias consultas SQL
 
@@ -140,6 +141,19 @@ async def _fetch_stock_tabla_rows():
 @login_required
 def home_view(request):
     return render(request, 'gateway/home.html')
+
+
+@login_required
+@require_POST
+def tab_heartbeat_view(request):
+    """Latido de gateway/base.html: si el usuario tiene single_tab_only,
+    solo una pestaña puede quedar registrada como activa a la vez (ver
+    gateway/tabs.py). Usuarios sin esa marca siempre reciben ok=True."""
+    single_tab_only = getattr(getattr(request.user, 'profile', None), 'single_tab_only', False)
+    tab_id = (request.POST.get('tab_id') or '').strip()
+    if not single_tab_only or not tab_id:
+        return JsonResponse({'ok': True})
+    return JsonResponse({'ok': check_and_register(request.user.pk, tab_id)})
 
 
 @page_required('stock')

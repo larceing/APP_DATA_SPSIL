@@ -82,6 +82,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'gateway.context_processors.gateway_status',
                 'gateway.context_processors.accessible_pages',
+                'gateway.context_processors.single_tab_only',
                 'core.context_processors.languages',
             ],
         },
