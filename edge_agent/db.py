@@ -179,15 +179,18 @@ def query_hueco_breakdown(ubicaciones, tipos_excluidos=None):
 
 
 def get_stock_actual(exclusion_rules=None, ubicaciones=None, tipos_excluidos=None, **params):
-    """Stock actual por artículo, igual que el M de "Almacen": el conjunto
-    que manda es el cruce de huecos (query_hueco_breakdown — INNER JOIN
-    ArticuloEstipulado x Hueco, JoinKind.Inner en el M), y Stock_Disponible
-    (StockDisponibleCentroAlmacen) se añade por encima como LEFT JOIN
-    (MergeStock, JoinKind.LeftOuter en el M) — no al revés. Un artículo con
-    saldo en StockDisponibleCentroAlmacen pero sin ningún hueco físico
-    asignado en las ubicaciones dadas no debe aparecer (así lo descarta el
-    INNER JOIN del M); de ahí salían códigos como "0"/"1"/"156" con stock
-    negativo redondeado a 0 que nunca están en el informe real.
+    """Stock actual por artículo, igual que el informe "Almacen": el
+    conjunto que manda es el cruce de huecos (query_hueco_breakdown —
+    INNER JOIN ArticuloEstipulado x Hueco, JoinKind.Inner en el M). Un
+    artículo sin ningún hueco físico asignado en las ubicaciones dadas no
+    debe aparecer (así lo descarta el INNER JOIN del M); de ahí salían
+    códigos como "0"/"1"/"156" con stock negativo redondeado a 0 que nunca
+    están en el informe real.
+
+    `Stock_Total` = Stock_Picking + Stock_Almacenamiento — así está
+    definida la medida "Stock Total" en el propio informe; Stock_Disponible
+    (StockDisponibleCentroAlmacen) no se usa para este cálculo en absoluto,
+    confirmado contra la medida real del informe.
 
     `ubicaciones`/`exclusion_rules`/`tipos_excluidos` llegan ya calculados
     desde servidor Y en cada petición — este agente no guarda nada en
@@ -206,7 +209,6 @@ def get_stock_actual(exclusion_rules=None, ubicaciones=None, tipos_excluidos=Non
             familias_excluidas.add(valor)
 
     ubicaciones = ubicaciones or []
-    stock = _query_stock(ubicaciones)
     familias = _query_familias()
     huecos, tipos_vistos = query_hueco_breakdown(ubicaciones, tipos_excluidos)
 
@@ -215,12 +217,14 @@ def get_stock_actual(exclusion_rules=None, ubicaciones=None, tipos_excluidos=Non
         familia = familias.get(id_articulo, '')
         if id_articulo in codigos_excluidos or familia in familias_excluidas:
             continue
+        picking = hueco.get('Picking', 0.0)
+        almacenamiento = hueco.get('Almacenamiento', 0.0)
         rows.append({
             'idArticulo': id_articulo,
             'FAMILIA': familia,
-            'Stock_Disponible': stock.get(id_articulo, 0.0),
-            'Stock_Picking': hueco.get('Picking', 0.0),
-            'Stock_Almacenamiento': hueco.get('Almacenamiento', 0.0),
+            'Stock_Total': picking + almacenamiento,
+            'Stock_Picking': picking,
+            'Stock_Almacenamiento': almacenamiento,
             'Etiquetas_Picking': hueco.get('Etiquetas_Picking'),
             'Etiquetas_Almacenamiento': hueco.get('Etiquetas_Almacenamiento'),
         })

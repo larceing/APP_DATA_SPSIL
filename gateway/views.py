@@ -175,7 +175,7 @@ async def stock_export_view(request):
     sheet.title = 'Stock'
     sheet.append(['Artículo', 'Stock'])
     for row in rows:
-        sheet.append([row.get('idArticulo'), row.get('Stock_Disponible')])
+        sheet.append([row.get('idArticulo'), row.get('Stock_Total')])
 
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

@@ -16,13 +16,16 @@
     <p id="stock-error" style="color: var(--color-danger); display: none;"></p>
 
     {% comment %}
-    Solo 2 columnas a propósito: Artículo y su Stock. El cálculo de fondo
+    Solo 2 columnas a propósito: Artículo y su Stock (= Stock_Picking +
+    Stock_Almacenamiento, la medida "Stock Total" real del informe;
+    Stock_Disponible no interviene en absoluto). El cálculo de fondo
     (get_stock_actual) trae más datos por detrás — Familia (para las
-    reglas de exclusión de ExclusionRule), y Picking/Almacenamiento
-    (según qué tipos de hueco estén incluidos en HuecoTipoCategoria y qué
-    ubicaciones en UbicacionAlmacen) — pero esta pantalla solo enseña el
-    número que importa aquí; el desglose vive en Stock Tabla y el ajuste
-    de esos filtros en sus páginas de configuración correspondientes.
+    reglas de exclusión de ExclusionRule), y el propio desglose
+    Picking/Almacenamiento (según qué tipos de hueco estén incluidos en
+    HuecoTipoCategoria y qué ubicaciones en UbicacionAlmacen) — pero esta
+    pantalla solo enseña el número que importa aquí; el desglose vive en
+    Stock Tabla y el ajuste de esos filtros en sus páginas de
+    configuración correspondientes.
     {% endcomment %}
     <table id="stock-table" style="width: 100%; margin-top: var(--spacing-md); border-collapse: collapse; display: none;">
         <thead><tr></tr></thead>
@@ -33,7 +36,7 @@
 <script>
 const COLUMNAS = [
     {clave: 'idArticulo', etiqueta: '{% ui "gateway.stock.col_articulo" %}'},
-    {clave: 'Stock_Disponible', etiqueta: '{% ui "gateway.stock.col_stock" %}'},
+    {clave: 'Stock_Total', etiqueta: '{% ui "gateway.stock.col_stock" %}'},
 ];
 
 let stockRows = [];
