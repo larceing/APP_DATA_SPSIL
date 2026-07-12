@@ -17,42 +17,74 @@
         <button type="submit" class="button">{% ui "gateway.config.add_button" %}</button>
     </form>
 
-    <h2>{% ui "gateway.config.tipo_label" %}: {% ui "gateway.config.tipo_articulo" %}</h2>
-    <table style="width:100%; border-collapse: collapse;">
-        <tbody>
-        {% for rule in articulos %}
-            <tr>
-                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">{{ rule.valor }}</td>
-                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border); text-align:right;">
-                    <form method="post" action="{% url 'gateway:config_delete_rule' rule.id %}">
-                        {% csrf_token %}
-                        <button type="submit" class="button" style="background: var(--color-danger);">{% ui "gateway.config.delete_button" %}</button>
-                    </form>
-                </td>
-            </tr>
-        {% empty %}
-            <tr><td class="text-muted">—</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
-
-    <h2>{% ui "gateway.config.tipo_label" %}: {% ui "gateway.config.tipo_familia" %}</h2>
-    <table style="width:100%; border-collapse: collapse;">
-        <tbody>
-        {% for rule in familias %}
-            <tr>
-                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">{{ rule.valor }}</td>
-                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border); text-align:right;">
-                    <form method="post" action="{% url 'gateway:config_delete_rule' rule.id %}">
-                        {% csrf_token %}
-                        <button type="submit" class="button" style="background: var(--color-danger);">{% ui "gateway.config.delete_button" %}</button>
-                    </form>
-                </td>
-            </tr>
-        {% empty %}
-            <tr><td class="text-muted">—</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    {% comment %}
+    Artículos y Familias van lado a lado, cada uno con su propio scroll y
+    altura acotada — así se ven ambas listas a la vez sin tener que bajar
+    del todo por una para llegar a la otra.
+    {% endcomment %}
+    <div style="display:flex; gap: var(--spacing-lg); flex-wrap: wrap;">
+        <div style="flex:1; min-width:260px;">
+            <h2>{% ui "gateway.config.tipo_label" %}: {% ui "gateway.config.tipo_articulo" %}</h2>
+            <div class="config-exclusion-list">
+                <table class="config-exclusion-table">
+                    <tbody>
+                    {% for rule in articulos %}
+                        <tr>
+                            <td>{{ rule.valor }}</td>
+                            <td style="text-align:right;">
+                                <form method="post" action="{% url 'gateway:config_delete_rule' rule.id %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="button" style="background: var(--color-danger);">{% ui "gateway.config.delete_button" %}</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td class="text-muted">—</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div style="flex:1; min-width:260px;">
+            <h2>{% ui "gateway.config.tipo_label" %}: {% ui "gateway.config.tipo_familia" %}</h2>
+            <div class="config-exclusion-list">
+                <table class="config-exclusion-table">
+                    <tbody>
+                    {% for rule in familias %}
+                        <tr>
+                            <td>{{ rule.valor }}</td>
+                            <td style="text-align:right;">
+                                <form method="post" action="{% url 'gateway:config_delete_rule' rule.id %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="button" style="background: var(--color-danger);">{% ui "gateway.config.delete_button" %}</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td class="text-muted">—</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
+
+<style>
+.config-exclusion-list {
+    max-height: calc(100vh - 360px);
+    overflow: auto;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+}
+.config-exclusion-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.config-exclusion-table td {
+    padding: 4px 8px;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--color-border);
+}
+</style>
 {% endblock %}
