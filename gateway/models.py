@@ -188,3 +188,19 @@ class UserProfile(models.Model):
             for page in self.department.pages.all():
                 pages[page.id] = page
         return sorted(pages.values(), key=lambda p: (p.group_label, p.order, p.name))
+
+
+class ActiveSession(models.Model):
+    """Token de la única sesión "válida" de un Usuario normal (no
+    Admin/Superadmin, exentos): cada login nuevo lo reemplaza
+    (gateway/signals.py), y gateway/middleware.py corta cualquier otra
+    sesión que no lleve este token en su siguiente petición."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='active_session'
+    )
+    token = models.CharField(max_length=64)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.user.get_username()

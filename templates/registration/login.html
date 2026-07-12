@@ -6,6 +6,9 @@
 {% block content %}
 <div class="card" style="max-width: 360px; margin: 40px auto;">
     <h1>{% ui "gateway.login.title" %}</h1>
+    {% if request.GET.session_kicked %}
+        <p style="color: var(--color-danger);">{% ui "gateway.login.session_kicked" %}</p>
+    {% endif %}
     <form method="post">
         {% csrf_token %}
         <div style="margin-bottom: var(--spacing-md);">
