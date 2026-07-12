@@ -12,19 +12,17 @@
     Esta lista no tiene formulario de "añadir": los tipos (id + descripción)
     los descubre equipo X directamente en la BD real (TipoHueco) y se
     registran solos aquí — incluidos por defecto, salvo Salida (id 9) —
-    listos para que el usuario los revise.
+    listos para que el usuario los revise. Un único formulario para toda
+    la tabla: se marca lo que haga falta y se guarda todo de golpe, no
+    fila a fila.
     {% endcomment %}
-    {% for ht in hueco_tipos %}
-    <form id="ht-save-{{ ht.id }}" method="post" action="{% url 'gateway:config_save_hueco_tipo' ht.id %}">{% csrf_token %}</form>
-    {% endfor %}
-
+    <form method="post" action="{% url 'gateway:config_save_hueco_tipos' %}">{% csrf_token %}
     <table style="width:100%; border-collapse: collapse;">
         <thead>
             <tr>
                 <th style="text-align:left; padding: var(--spacing-sm);">{% ui "gateway.config.hueco_tipos_id" %}</th>
                 <th style="text-align:left; padding: var(--spacing-sm);">{% ui "gateway.config.hueco_tipos_descripcion" %}</th>
                 <th style="text-align:left; padding: var(--spacing-sm);">{% ui "gateway.config.hueco_tipos_incluido" %}</th>
-                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -33,10 +31,7 @@
                 <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">{{ ht.id_tipo_hueco }}</td>
                 <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">{{ ht.descripcion }}</td>
                 <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">
-                    <input form="ht-save-{{ ht.id }}" type="checkbox" name="incluido"{% if ht.activo %} checked{% endif %}>
-                </td>
-                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border); text-align:right; white-space:nowrap;">
-                    <button form="ht-save-{{ ht.id }}" type="submit" class="button">{% ui "gateway.config.save_button" %}</button>
+                    <input type="checkbox" name="incluido" value="{{ ht.id }}"{% if ht.activo %} checked{% endif %}>
                 </td>
             </tr>
         {% empty %}
@@ -44,5 +39,7 @@
         {% endfor %}
         </tbody>
     </table>
+    <button type="submit" class="button" style="margin-top: var(--spacing-md);">{% ui "gateway.config.save_button" %}</button>
+    </form>
 </div>
 {% endblock %}

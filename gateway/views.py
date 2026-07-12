@@ -298,9 +298,12 @@ def config_hueco_tipos_view(request):
 
 @staff_required
 @require_POST
-def config_save_hueco_tipo(request, hueco_tipo_id):
-    incluido = request.POST.get('incluido') == 'on'
-    HuecoTipoCategoria.objects.filter(pk=hueco_tipo_id).update(activo=incluido)
+def config_save_hueco_tipos(request):
+    incluidos = set(request.POST.getlist('incluido'))
+    tipos = list(HuecoTipoCategoria.objects.all())
+    for ht in tipos:
+        ht.activo = str(ht.id) in incluidos
+    HuecoTipoCategoria.objects.bulk_update(tipos, ['activo'])
     return redirect('gateway:config_hueco_tipos')
 
 
