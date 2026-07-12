@@ -108,11 +108,12 @@ const COLUMN_LABELS = {
     SIZE: 'Tamaño',
     Picking: 'Picking',
     Almacenamiento: 'Almacenamiento',
-    Sin_Clasificar: 'Sin Clasificar',
     Etiquetas_Picking: 'Etiquetas Picking',
     Etiquetas_Almacenamiento: 'Etiquetas Almacén',
-    Etiquetas_Sin_Clasificar: 'Etiquetas Sin Clasificar',
 };
+
+let ordenColumna = null;
+let ordenAscendente = true;
 
 function nombreColumna(clave) {
     return COLUMN_LABELS[clave] || clave.replace(/_/g, ' ');
@@ -122,9 +123,37 @@ function celda(valor) {
     return valor === null || valor === undefined ? '' : valor;
 }
 
+function compararValores(a, b) {
+    const numA = parseFloat(a);
+    const numB = parseFloat(b);
+    if (a !== '' && b !== '' && a !== null && b !== null && !isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+    }
+    return String(a ?? '').localeCompare(String(b ?? ''));
+}
+
+function ordenarPor(columna) {
+    if (ordenColumna === columna) {
+        ordenAscendente = !ordenAscendente;
+    } else {
+        ordenColumna = columna;
+        ordenAscendente = true;
+    }
+    if (filasTabla.length) {
+        pintarCabecera(Object.keys(filasTabla[0]));
+    }
+    aplicarFiltros();
+}
+
 function pintarCabecera(columnas) {
     const thead = document.querySelector('#stock-tabla-table thead tr');
-    thead.innerHTML = columnas.map((c) => '<th>' + nombreColumna(c) + '</th>').join('');
+    thead.innerHTML = columnas.map((c) => {
+        const flecha = c === ordenColumna ? (ordenAscendente ? ' ▲' : ' ▼') : '';
+        return '<th data-col="' + c + '" style="cursor:pointer; user-select:none;">' + nombreColumna(c) + flecha + '</th>';
+    }).join('');
+    thead.querySelectorAll('th').forEach((th) => {
+        th.addEventListener('click', () => ordenarPor(th.dataset.col));
+    });
 }
 
 function pintarFilas(filas, columnas) {
@@ -156,7 +185,7 @@ function aplicarFiltros() {
     const categoria = document.getElementById('filtro-categoria').value;
     const familia = document.getElementById('filtro-familia').value;
 
-    const filtradas = filasTabla.filter((fila) => {
+    let filtradas = filasTabla.filter((fila) => {
         if (texto) {
             const enTexto = (String(fila.CODART || '') + ' ' + String(fila.Descripcion || '')).toUpperCase();
             if (!enTexto.includes(texto)) return false;
@@ -165,6 +194,12 @@ function aplicarFiltros() {
         if (familia && String(fila.Familia || '') !== familia) return false;
         return true;
     });
+    if (ordenColumna) {
+        filtradas = [...filtradas].sort((a, b) => {
+            const cmp = compararValores(a[ordenColumna], b[ordenColumna]);
+            return ordenAscendente ? cmp : -cmp;
+        });
+    }
     pintarFilas(filtradas, columnas);
 }
 

@@ -167,14 +167,15 @@ async def stock_export_view(request):
     except GatewayFetchError as exc:
         return JsonResponse({'error': exc.error}, status=exc.status)
 
+    # Solo Artículo + Stock, a propósito (igual que la pantalla): el
+    # cálculo trae más columnas por detrás, pero aquí solo se enseñan
+    # las dos que importan.
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = 'Stock'
-    if rows:
-        columns = list(rows[0].keys())
-        sheet.append(columns)
-        for row in rows:
-            sheet.append([row.get(col) for col in columns])
+    sheet.append(['Artículo', 'Stock'])
+    for row in rows:
+        sheet.append([row.get('idArticulo'), row.get('Stock_Disponible')])
 
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

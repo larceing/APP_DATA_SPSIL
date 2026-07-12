@@ -15,33 +15,72 @@
     </div>
     <p id="stock-error" style="color: var(--color-danger); display: none;"></p>
 
-    <div style="overflow-x: auto;">
-        <table id="stock-table" style="width: 100%; margin-top: var(--spacing-md); border-collapse: collapse; display: none; white-space: nowrap;">
-            <thead><tr></tr></thead>
-            <tbody></tbody>
-        </table>
-    </div>
+    {% comment %}
+    Solo 2 columnas a propósito: Artículo y su Stock. El cálculo de fondo
+    (get_stock_actual) trae más datos por detrás — Familia (para las
+    reglas de exclusión de ExclusionRule), y Picking/Almacenamiento
+    (según qué tipos de hueco estén incluidos en HuecoTipoCategoria y qué
+    ubicaciones en UbicacionAlmacen) — pero esta pantalla solo enseña el
+    número que importa aquí; el desglose vive en Stock Tabla y el ajuste
+    de esos filtros en sus páginas de configuración correspondientes.
+    {% endcomment %}
+    <table id="stock-table" style="width: 100%; margin-top: var(--spacing-md); border-collapse: collapse; display: none;">
+        <thead><tr></tr></thead>
+        <tbody></tbody>
+    </table>
 </div>
 
 <script>
+const COLUMNAS = [
+    {clave: 'idArticulo', etiqueta: '{% ui "gateway.stock.col_articulo" %}'},
+    {clave: 'Stock_Disponible', etiqueta: '{% ui "gateway.stock.col_stock" %}'},
+];
+
 let stockRows = [];
+let ordenColumna = null;
+let ordenAscendente = true;
 
 function celda(valor) {
     return valor === null || valor === undefined ? '' : valor;
 }
 
-function pintarCabecera(columnas) {
-    const thead = document.querySelector('#stock-table thead tr');
-    thead.innerHTML = columnas.map(
-        (c) => '<th style="text-align:left; border-bottom: 1px solid var(--color-border); padding: var(--spacing-sm);">' + c.replace(/_/g, ' ') + '</th>'
-    ).join('');
+function compararValores(a, b) {
+    const numA = parseFloat(a);
+    const numB = parseFloat(b);
+    if (a !== '' && b !== '' && a !== null && b !== null && !isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+    }
+    return String(a ?? '').localeCompare(String(b ?? ''));
 }
 
-function pintarFilas(filas, columnas) {
+function ordenarPor(columna) {
+    if (ordenColumna === columna) {
+        ordenAscendente = !ordenAscendente;
+    } else {
+        ordenColumna = columna;
+        ordenAscendente = true;
+    }
+    pintarCabecera();
+    aplicarFiltro();
+}
+
+function pintarCabecera() {
+    const thead = document.querySelector('#stock-table thead tr');
+    thead.innerHTML = COLUMNAS.map(({clave, etiqueta}) => {
+        const flecha = clave === ordenColumna ? (ordenAscendente ? ' ▲' : ' ▼') : '';
+        return '<th data-col="' + clave + '" style="text-align:left; border-bottom: 1px solid var(--color-border); padding: var(--spacing-sm); cursor:pointer; user-select:none;">'
+            + etiqueta + flecha + '</th>';
+    }).join('');
+    thead.querySelectorAll('th').forEach((th) => {
+        th.addEventListener('click', () => ordenarPor(th.dataset.col));
+    });
+}
+
+function pintarFilas(filas) {
     const tbody = document.querySelector('#stock-table tbody');
     tbody.innerHTML = filas.map((fila) =>
-        '<tr>' + columnas.map(
-            (c) => '<td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">' + celda(fila[c]) + '</td>'
+        '<tr>' + COLUMNAS.map(
+            ({clave}) => '<td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">' + celda(fila[clave]) + '</td>'
         ).join('') + '</tr>'
     ).join('');
     document.getElementById('stock-table').style.display = filas.length ? 'table' : 'none';
@@ -49,15 +88,21 @@ function pintarFilas(filas, columnas) {
 
 function aplicarFiltro() {
     if (!stockRows.length) return;
-    const columnas = Object.keys(stockRows[0]);
     const term = document.getElementById('search-input').value.trim().toUpperCase();
-    const filtradas = term
+    let filtradas = term
         ? stockRows.filter((row) => String(row.idArticulo || '').toUpperCase().includes(term))
         : stockRows;
-    pintarFilas(filtradas, columnas);
+    if (ordenColumna) {
+        filtradas = [...filtradas].sort((a, b) => {
+            const cmp = compararValores(a[ordenColumna], b[ordenColumna]);
+            return ordenAscendente ? cmp : -cmp;
+        });
+    }
+    pintarFilas(filtradas);
 }
 
 document.getElementById('search-input').addEventListener('input', aplicarFiltro);
+pintarCabecera();
 
 document.getElementById('btn-stock').addEventListener('click', async function () {
     const button = this;
@@ -78,9 +123,6 @@ document.getElementById('btn-stock').addEventListener('click', async function ()
 
         stockRows = data.rows;
         document.getElementById('search-input').value = '';
-        if (stockRows.length) {
-            pintarCabecera(Object.keys(stockRows[0]));
-        }
         aplicarFiltro();
     } catch (err) {
         errorEl.textContent = '{% ui "gateway.stock.error_prefix" %}: ' + err;
