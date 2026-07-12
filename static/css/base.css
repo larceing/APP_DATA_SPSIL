@@ -253,11 +253,23 @@ select {
     border-color: var(--color-brand-yellow);
 }
 
+.home-section {
+    margin-top: var(--spacing-lg);
+}
+
+.home-section__title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    margin-bottom: var(--spacing-sm);
+}
+
 .home-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: var(--spacing-md);
-    margin-top: var(--spacing-lg);
 }
 
 .home-card {
@@ -276,15 +288,6 @@ select {
 .home-card:hover {
     box-shadow: var(--shadow-md);
     transform: translateY(-2px);
-}
-
-.home-card__group {
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--color-text-muted);
-    margin-bottom: var(--spacing-xs);
 }
 
 .home-card__title {

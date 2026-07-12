@@ -9,42 +9,37 @@
     <p class="text-muted">{% ui "gateway.home.subtitle" %}</p>
 </div>
 
-<div class="home-grid">
-    {% for page in accessible_pages %}
-    <a class="home-card" href="{% url page.url_name %}">
-        <div class="home-card__group">{{ page.group_label }}</div>
-        <div class="home-card__title">{{ page.name }}</div>
-    </a>
-    {% endfor %}
-
-    {% if request.user.is_staff %}
-    <a class="home-card" href="{% url 'gateway:config_exclusion' %}">
-        <div class="home-card__group">{% ui "gateway.nav.group_config_almacen" %}</div>
-        <div class="home-card__title">{% ui "gateway.nav.config_exclusion" %}</div>
-    </a>
-    <a class="home-card" href="{% url 'gateway:config_hueco_tipos' %}">
-        <div class="home-card__group">{% ui "gateway.nav.group_config_almacen" %}</div>
-        <div class="home-card__title">{% ui "gateway.nav.config_hueco_tipos" %}</div>
-    </a>
-    <a class="home-card" href="{% url 'gateway:config_ubicaciones' %}">
-        <div class="home-card__group">{% ui "gateway.nav.group_config_almacen" %}</div>
-        <div class="home-card__title">{% ui "gateway.nav.config_ubicaciones" %}</div>
-    </a>
-    <a class="home-card" href="{% url 'gateway:config_suppliers' %}">
-        <div class="home-card__group">{% ui "gateway.nav.group_config_compras" %}</div>
-        <div class="home-card__title">{% ui "gateway.nav.config_suppliers" %}</div>
-    </a>
-    {% endif %}
-
-    {% if request.user.is_superuser %}
-    <a class="home-card" href="/admin/auth/user/">
-        <div class="home-card__group">{% ui "gateway.nav.group_admin" %}</div>
-        <div class="home-card__title">{% ui "gateway.nav.users" %}</div>
-    </a>
-    <a class="home-card" href="/admin/gateway/gatewaynode/">
-        <div class="home-card__group">{% ui "gateway.nav.group_admin" %}</div>
-        <div class="home-card__title">{% ui "gateway.nav.nodes" %}</div>
-    </a>
-    {% endif %}
+{% comment %}
+Agrupado por group_label (Almacén, Compras, Configuración · Almacén,
+Configuración · Compras...) igual que el submenú del sidebar — cada
+Page ya trae su group_label real, así que no hace falta ningún bloque
+aparte hardcodeado para Configuración (eso duplicaba las tarjetas).
+{% endcomment %}
+{% regroup accessible_pages by group_label as page_groups %}
+{% for group in page_groups %}
+<div class="home-section">
+    <h2 class="home-section__title">{{ group.grouper }}</h2>
+    <div class="home-grid">
+        {% for page in group.list %}
+        <a class="home-card" href="{% url page.url_name %}">
+            <div class="home-card__title">{{ page.name }}</div>
+        </a>
+        {% endfor %}
+    </div>
 </div>
+{% endfor %}
+
+{% if request.user.is_superuser %}
+<div class="home-section">
+    <h2 class="home-section__title">{% ui "gateway.nav.group_admin" %}</h2>
+    <div class="home-grid">
+        <a class="home-card" href="/admin/auth/user/">
+            <div class="home-card__title">{% ui "gateway.nav.users" %}</div>
+        </a>
+        <a class="home-card" href="/admin/gateway/gatewaynode/">
+            <div class="home-card__title">{% ui "gateway.nav.nodes" %}</div>
+        </a>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
