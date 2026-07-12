@@ -67,6 +67,24 @@ def _query_familias():
         conn.close()
 
 
+def _query_todos_tipos_hueco():
+    """Lista completa de TipoHueco (~10 filas fijas), sin filtrar por
+    ubicación ni por si tienen stock ahora mismo — para que la
+    configuración de /gateway/config/tipos-hueco/ muestre todos los
+    tipos posibles desde el principio, no solo los que casualmente
+    tengan unidades en un hueco en este momento."""
+    conn = _mariadb_connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('SELECT idTipoHueco, descripcion FROM TipoHueco')
+            return [
+                {'id_tipo_hueco': id_tipo, 'descripcion': (descripcion or '').strip()}
+                for id_tipo, descripcion in cur.fetchall()
+            ]
+    finally:
+        conn.close()
+
+
 def query_hueco_breakdown(ubicaciones, tipos_excluidos=None):
     """Cruce ArticuloHuecoStock + Hueco + TipoHueco, compartido por Stock
     y Stock Tabla: desglose de stock por artículo en Picking (tipoHueco=1)
@@ -85,13 +103,15 @@ def query_hueco_breakdown(ubicaciones, tipos_excluidos=None):
     Devuelve (breakdown, tipos_vistos):
     - breakdown: {idArticulo: {'Picking':, 'Almacenamiento':,
       'Etiquetas_Picking':, 'Etiquetas_Almacenamiento':}}
-    - tipos_vistos: [{'id_tipo_hueco':, 'descripcion':}, ...] — todos los
-      tipos que aparecen realmente en la BD, para que servidor Y registre
-      los que no conozca todavía (ver
+    - tipos_vistos: [{'id_tipo_hueco':, 'descripcion':}, ...] — la tabla
+      TipoHueco completa (~10 filas fijas), no solo los tipos que tengan
+      stock ahora mismo, para que servidor Y registre desde el principio
+      todos los posibles en /gateway/config/tipos-hueco/ (ver
       gateway/views.py::_registrar_tipos_hueco_nuevos).
     """
+    tipos_vistos_lista = _query_todos_tipos_hueco()
     if not ubicaciones:
-        return {}, []
+        return {}, tipos_vistos_lista
 
     condiciones = ' OR '.join(
         '(ae.idCentro = %s AND ae.idAlmacen = %s AND ae.idZona = %s)' for _ in ubicaciones
@@ -101,13 +121,12 @@ def query_hueco_breakdown(ubicaciones, tipos_excluidos=None):
         parametros += [u['id_centro'], u['id_almacen'], u['id_zona']]
 
     sql = (
-        'SELECT ae.idArticulo, ae.unidad1, h.tipoHueco, th.descripcion, h.etiqueta '
+        'SELECT ae.idArticulo, ae.unidad1, h.tipoHueco, h.etiqueta '
         'FROM ArticuloHuecoStock ae '
         'JOIN Hueco h '
         '  ON h.idCentro = ae.idCentro AND h.idAlmacen = ae.idAlmacen AND h.idZona = ae.idZona '
         '  AND h.idCalle = ae.idCalle AND h.idSeccion = ae.idSeccion AND h.idNivel = ae.idNivel '
         '  AND h.idHueco = ae.idHueco AND h.idSubhueco = ae.idSubHueco '
-        'JOIN TipoHueco th ON th.idTipoHueco = h.tipoHueco '
         f'WHERE ({condiciones}) AND h.idCalle <> 0'
     )
     tipos_excluidos = list(tipos_excluidos or [])
@@ -125,11 +144,9 @@ def query_hueco_breakdown(ubicaciones, tipos_excluidos=None):
         conn.close()
 
     breakdown = {}
-    tipos_vistos = {}
-    for id_articulo, unidad1, id_tipo_hueco, descripcion, etiqueta in filas:
+    for id_articulo, unidad1, id_tipo_hueco, etiqueta in filas:
         clave = _normalize(id_articulo)
         unidad1 = float(unidad1 or 0)
-        tipos_vistos[id_tipo_hueco] = (descripcion or '').strip()
 
         fila = breakdown.setdefault(clave, {
             'Picking': 0.0, 'Almacenamiento': 0.0,
@@ -148,9 +165,6 @@ def query_hueco_breakdown(ubicaciones, tipos_excluidos=None):
         fila['Etiquetas_Picking'] = ', '.join(sorted(fila['Etiquetas_Picking'])) or None
         fila['Etiquetas_Almacenamiento'] = ', '.join(sorted(fila['Etiquetas_Almacenamiento'])) or None
 
-    tipos_vistos_lista = [
-        {'id_tipo_hueco': id_tipo, 'descripcion': desc} for id_tipo, desc in tipos_vistos.items()
-    ]
     return breakdown, tipos_vistos_lista
 
 
