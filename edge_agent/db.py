@@ -42,11 +42,23 @@ def _query_stock(ubicaciones):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                f'SELECT idArticulo, GREATEST(SUM(stock), 0) AS Suma_Stock '
-                f'FROM StockDisponibleCentroAlmacen WHERE {condiciones} GROUP BY idArticulo',
+                f'SELECT idArticulo, stock '
+                f'FROM StockDisponibleCentroAlmacen WHERE {condiciones}',
                 parametros,
             )
-            return {_normalize(id_articulo): float(suma_stock) for id_articulo, suma_stock in cur.fetchall()}
+            # Sumamos en Python sobre la clave ya normalizada (trim+upper),
+            # no agrupamos en el propio SQL por idArticulo tal cual: si la
+            # misma referencia tiene variantes con espacios/mayúsculas
+            # distintas en la BD, agrupar en crudo las deja como filas
+            # separadas y un diccionario construido de golpe se queda solo
+            # con la última, perdiendo stock en vez de sumarlo.
+            totales = {}
+            for id_articulo, stock in cur.fetchall():
+                clave = _normalize(id_articulo)
+                if not clave:
+                    continue
+                totales[clave] = totales.get(clave, 0.0) + float(stock or 0)
+            return {clave: max(total, 0.0) for clave, total in totales.items()}
     finally:
         conn.close()
 
