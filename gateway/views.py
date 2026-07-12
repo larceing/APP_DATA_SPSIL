@@ -5,7 +5,7 @@ from functools import wraps
 import openpyxl
 from asgiref.sync import sync_to_async
 from channels.layers import get_channel_layer
-from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_GET, require_POST
@@ -15,8 +15,6 @@ from .models import ExclusionRule, GatewayNode, HuecoTipoCategoria, SupplierCate
 from .permissions import page_required
 
 REQUEST_TIMEOUT = 20  # segundos: el agente encadena varias consultas SQL
-
-staff_required = user_passes_test(lambda u: u.is_staff)
 
 
 def require_get_async(view_func):
@@ -225,7 +223,7 @@ async def stock_tabla_export_view(request):
     return response
 
 
-@staff_required
+@page_required('config-exclusion')
 def config_exclusion_view(request):
     rules = ExclusionRule.objects.filter(activo=True)
     return render(request, 'gateway/config_exclusion.html', {
@@ -234,7 +232,7 @@ def config_exclusion_view(request):
     })
 
 
-@staff_required
+@page_required('config-exclusion')
 @require_POST
 def config_add_rule(request):
     tipo = request.POST.get('tipo')
@@ -246,21 +244,21 @@ def config_add_rule(request):
     return redirect('gateway:config_exclusion')
 
 
-@staff_required
+@page_required('config-exclusion')
 @require_POST
 def config_delete_rule(request, rule_id):
     ExclusionRule.objects.filter(pk=rule_id).update(activo=False)
     return redirect('gateway:config_exclusion')
 
 
-@staff_required
+@page_required('config-proveedores')
 def config_suppliers_view(request):
     return render(request, 'gateway/config_suppliers.html', {
         'supplier_categories': SupplierCategory.objects.filter(activo=True),
     })
 
 
-@staff_required
+@page_required('config-proveedores')
 @require_POST
 def config_save_supplier_category(request):
     supplier_id = request.POST.get('id')
@@ -282,21 +280,21 @@ def config_save_supplier_category(request):
     return redirect('gateway:config_suppliers')
 
 
-@staff_required
+@page_required('config-proveedores')
 @require_POST
 def config_delete_supplier_category(request, supplier_id):
     SupplierCategory.objects.filter(pk=supplier_id).update(activo=False)
     return redirect('gateway:config_suppliers')
 
 
-@staff_required
+@page_required('config-hueco-tipos')
 def config_hueco_tipos_view(request):
     return render(request, 'gateway/config_hueco_tipos.html', {
         'hueco_tipos': HuecoTipoCategoria.objects.all(),
     })
 
 
-@staff_required
+@page_required('config-hueco-tipos')
 @require_POST
 def config_save_hueco_tipos(request):
     incluidos = set(request.POST.getlist('incluido'))
@@ -307,14 +305,14 @@ def config_save_hueco_tipos(request):
     return redirect('gateway:config_hueco_tipos')
 
 
-@staff_required
+@page_required('config-ubicaciones')
 def config_ubicaciones_view(request):
     return render(request, 'gateway/config_ubicaciones.html', {
         'ubicaciones': UbicacionAlmacen.objects.filter(activo=True),
     })
 
 
-@staff_required
+@page_required('config-ubicaciones')
 @require_POST
 def config_add_ubicacion(request):
     id_centro = (request.POST.get('id_centro') or '').strip()
@@ -328,7 +326,7 @@ def config_add_ubicacion(request):
     return redirect('gateway:config_ubicaciones')
 
 
-@staff_required
+@page_required('config-ubicaciones')
 @require_POST
 def config_delete_ubicacion(request, ubicacion_id):
     UbicacionAlmacen.objects.filter(pk=ubicacion_id).update(activo=False)

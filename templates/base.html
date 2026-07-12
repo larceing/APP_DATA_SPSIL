@@ -28,6 +28,7 @@
 
         {% regroup accessible_pages by group_label as page_groups %}
         {% for group in page_groups %}
+        {% if group.grouper != 'Configuración · Almacén' and group.grouper != 'Configuración · Compras' %}
         <div class="sidebar__group">
             <div class="sidebar__group-title">{{ group.grouper }}</div>
             {% for page in group.list %}
@@ -35,23 +36,41 @@
                href="{% url page.url_name %}">{{ page.name }}</a>
             {% endfor %}
         </div>
+        {% endif %}
         {% endfor %}
 
-        {% if request.user.is_staff %}
+        {% comment %}
+        Cada enlace se muestra solo si el usuario tiene esa Page concreta
+        concedida (por departamento o suelta) — igual que Stock/Stock
+        Tabla, no un flag is_staff plano: se puede dar acceso a, por
+        ejemplo, solo Exclusiones sin hacer Admin de todo a alguien.
+        Admin/Superadmin ven todo (bypass en get_accessible_pages).
+        {% endcomment %}
+        {% if 'config-exclusion' in accessible_page_slugs or 'config-hueco-tipos' in accessible_page_slugs or 'config-ubicaciones' in accessible_page_slugs or 'config-proveedores' in accessible_page_slugs %}
         <div class="sidebar__group">
             <div class="sidebar__group-title">{% ui "gateway.nav.group_config" %}</div>
 
+            {% if 'config-exclusion' in accessible_page_slugs or 'config-hueco-tipos' in accessible_page_slugs or 'config-ubicaciones' in accessible_page_slugs %}
             <div class="sidebar__subgroup-title">{% ui "gateway.nav.group_config_almacen" %}</div>
+            {% if 'config-exclusion' in accessible_page_slugs %}
             <a class="sidebar__link{% if request.resolver_match.url_name == 'config_exclusion' %} active{% endif %}"
                href="{% url 'gateway:config_exclusion' %}">{% ui "gateway.nav.config_exclusion" %}</a>
+            {% endif %}
+            {% if 'config-hueco-tipos' in accessible_page_slugs %}
             <a class="sidebar__link{% if request.resolver_match.url_name == 'config_hueco_tipos' %} active{% endif %}"
                href="{% url 'gateway:config_hueco_tipos' %}">{% ui "gateway.nav.config_hueco_tipos" %}</a>
+            {% endif %}
+            {% if 'config-ubicaciones' in accessible_page_slugs %}
             <a class="sidebar__link{% if request.resolver_match.url_name == 'config_ubicaciones' %} active{% endif %}"
                href="{% url 'gateway:config_ubicaciones' %}">{% ui "gateway.nav.config_ubicaciones" %}</a>
+            {% endif %}
+            {% endif %}
 
+            {% if 'config-proveedores' in accessible_page_slugs %}
             <div class="sidebar__subgroup-title">{% ui "gateway.nav.group_config_compras" %}</div>
             <a class="sidebar__link{% if request.resolver_match.url_name == 'config_suppliers' %} active{% endif %}"
                href="{% url 'gateway:config_suppliers' %}">{% ui "gateway.nav.config_suppliers" %}</a>
+            {% endif %}
         </div>
         {% endif %}
 
