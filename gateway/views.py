@@ -9,10 +9,9 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.http import HttpResponse, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_GET, require_POST
-from openpyxl.utils import get_column_letter
 
 from .consumers import CONNECTED_NODES
-from .models import ExclusionRule, GatewayNode, HuecoTipoCategoria, SupplierCategory
+from .models import ExclusionRule, GatewayNode, HuecoTipoCategoria, SupplierCategory, UbicacionAlmacen
 from .permissions import page_required
 
 REQUEST_TIMEOUT = 20  # segundos: el agente encadena varias consultas SQL
@@ -83,39 +82,58 @@ async def _ask_gateway(query, params, timeout=REQUEST_TIMEOUT):
     return payload
 
 
+async def _fetch_ubicaciones():
+    return await sync_to_async(list)(
+        UbicacionAlmacen.objects.filter(activo=True).values('id_centro', 'id_almacen', 'id_zona')
+    )
+
+
+async def _fetch_tipos_excluidos():
+    return await sync_to_async(list)(
+        HuecoTipoCategoria.objects.filter(activo=False).values_list('id_tipo_hueco', flat=True)
+    )
+
+
 async def _fetch_stock_rows():
     exclusion_rules = await sync_to_async(list)(
         ExclusionRule.objects.filter(activo=True).values('tipo', 'valor')
     )
-    payload = await _ask_gateway('stock_actual', {'exclusion_rules': exclusion_rules})
+    payload = await _ask_gateway('stock_actual', {
+        'exclusion_rules': exclusion_rules,
+        'ubicaciones': await _fetch_ubicaciones(),
+        'tipos_excluidos': await _fetch_tipos_excluidos(),
+    })
+    await _registrar_tipos_hueco_nuevos(payload.get('tipos_hueco_descubiertos', []))
     return payload.get('rows', [])
 
 
-async def _registrar_tipos_hueco_nuevos(descripciones):
-    """Cualquier TipoHueco.descripcion que equipo X vea en la BD real y que
+async def _registrar_tipos_hueco_nuevos(tipos_vistos):
+    """Cualquier tipo de hueco que equipo X vea realmente en la BD y que
     todavía no esté en nuestra configuración se registra automáticamente
-    (activa, sin clasificar) para que el usuario la revise en
-    /gateway/config/tipos-hueco/ — nunca se adivina la clasificación por
-    código."""
-    existentes = set(await sync_to_async(list)(HuecoTipoCategoria.objects.values_list('descripcion', flat=True)))
-    for descripcion in descripciones or []:
-        if descripcion and descripcion not in existentes:
-            await sync_to_async(HuecoTipoCategoria.objects.get_or_create)(
-                descripcion=descripcion,
-                defaults={'categoria': HuecoTipoCategoria.Categoria.IGNORAR, 'activo': True},
-            )
+    (incluido, salvo el 9 = Salida) para que el usuario lo revise en
+    /gateway/config/tipos-hueco/ — nunca se adivina por texto, se usa el
+    id real de TipoHueco.idTipoHueco (estable aunque cambie la
+    descripción)."""
+    existentes = set(await sync_to_async(list)(HuecoTipoCategoria.objects.values_list('id_tipo_hueco', flat=True)))
+    for tipo in tipos_vistos or []:
+        id_tipo_hueco = tipo.get('id_tipo_hueco')
+        if id_tipo_hueco is None or id_tipo_hueco in existentes:
+            continue
+        await sync_to_async(HuecoTipoCategoria.objects.get_or_create)(
+            id_tipo_hueco=id_tipo_hueco,
+            defaults={'descripcion': tipo.get('descripcion', ''), 'activo': id_tipo_hueco != 9},
+        )
+        existentes.add(id_tipo_hueco)
 
 
 async def _fetch_stock_tabla_rows():
     supplier_categories = await sync_to_async(list)(
         SupplierCategory.objects.filter(activo=True).values('codpro', 'organizacion', 'categoria')
     )
-    hueco_tipos = await sync_to_async(list)(
-        HuecoTipoCategoria.objects.filter(activo=True).values('descripcion', 'categoria')
-    )
     payload = await _ask_gateway('stock_tabla', {
         'supplier_categories': supplier_categories,
-        'hueco_tipos': hueco_tipos,
+        'ubicaciones': await _fetch_ubicaciones(),
+        'tipos_excluidos': await _fetch_tipos_excluidos(),
     })
     await _registrar_tipos_hueco_nuevos(payload.get('tipos_hueco_descubiertos', []))
     return payload.get('rows', [])
@@ -152,11 +170,11 @@ async def stock_export_view(request):
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = 'Stock'
-    sheet.append(['Artículo', 'Stock'])
-    for row in rows:
-        sheet.append([row.get('idArticulo'), row.get('Suma_Stock')])
-    for col, width in ((1, 20), (2, 14)):
-        sheet.column_dimensions[get_column_letter(col)].width = width
+    if rows:
+        columns = list(rows[0].keys())
+        sheet.append(columns)
+        for row in rows:
+            sheet.append([row.get(col) for col in columns])
 
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -273,22 +291,41 @@ def config_delete_supplier_category(request, supplier_id):
 @staff_required
 def config_hueco_tipos_view(request):
     return render(request, 'gateway/config_hueco_tipos.html', {
-        'hueco_tipos': HuecoTipoCategoria.objects.filter(activo=True),
-        'categorias': HuecoTipoCategoria.Categoria.choices,
+        'hueco_tipos': HuecoTipoCategoria.objects.all(),
     })
 
 
 @staff_required
 @require_POST
 def config_save_hueco_tipo(request, hueco_tipo_id):
-    categoria = request.POST.get('categoria')
-    if categoria in HuecoTipoCategoria.Categoria.values:
-        HuecoTipoCategoria.objects.filter(pk=hueco_tipo_id).update(categoria=categoria)
+    incluido = request.POST.get('incluido') == 'on'
+    HuecoTipoCategoria.objects.filter(pk=hueco_tipo_id).update(activo=incluido)
     return redirect('gateway:config_hueco_tipos')
 
 
 @staff_required
+def config_ubicaciones_view(request):
+    return render(request, 'gateway/config_ubicaciones.html', {
+        'ubicaciones': UbicacionAlmacen.objects.filter(activo=True),
+    })
+
+
+@staff_required
 @require_POST
-def config_delete_hueco_tipo(request, hueco_tipo_id):
-    HuecoTipoCategoria.objects.filter(pk=hueco_tipo_id).update(activo=False)
-    return redirect('gateway:config_hueco_tipos')
+def config_add_ubicacion(request):
+    id_centro = (request.POST.get('id_centro') or '').strip()
+    id_almacen = (request.POST.get('id_almacen') or '').strip()
+    id_zona = (request.POST.get('id_zona') or '').strip()
+    if id_centro.isdigit() and id_almacen.isdigit() and id_zona.isdigit():
+        UbicacionAlmacen.objects.update_or_create(
+            id_centro=int(id_centro), id_almacen=int(id_almacen), id_zona=int(id_zona),
+            defaults={'activo': True},
+        )
+    return redirect('gateway:config_ubicaciones')
+
+
+@staff_required
+@require_POST
+def config_delete_ubicacion(request, ubicacion_id):
+    UbicacionAlmacen.objects.filter(pk=ubicacion_id).update(activo=False)
+    return redirect('gateway:config_ubicaciones')

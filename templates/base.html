@@ -40,12 +40,18 @@
         {% if request.user.is_staff %}
         <div class="sidebar__group">
             <div class="sidebar__group-title">{% ui "gateway.nav.group_config" %}</div>
+
+            <div class="sidebar__subgroup-title">{% ui "gateway.nav.group_config_almacen" %}</div>
             <a class="sidebar__link{% if request.resolver_match.url_name == 'config_exclusion' %} active{% endif %}"
                href="{% url 'gateway:config_exclusion' %}">{% ui "gateway.nav.config_exclusion" %}</a>
-            <a class="sidebar__link{% if request.resolver_match.url_name == 'config_suppliers' %} active{% endif %}"
-               href="{% url 'gateway:config_suppliers' %}">{% ui "gateway.nav.config_suppliers" %}</a>
             <a class="sidebar__link{% if request.resolver_match.url_name == 'config_hueco_tipos' %} active{% endif %}"
                href="{% url 'gateway:config_hueco_tipos' %}">{% ui "gateway.nav.config_hueco_tipos" %}</a>
+            <a class="sidebar__link{% if request.resolver_match.url_name == 'config_ubicaciones' %} active{% endif %}"
+               href="{% url 'gateway:config_ubicaciones' %}">{% ui "gateway.nav.config_ubicaciones" %}</a>
+
+            <div class="sidebar__subgroup-title">{% ui "gateway.nav.group_config_compras" %}</div>
+            <a class="sidebar__link{% if request.resolver_match.url_name == 'config_suppliers' %} active{% endif %}"
+               href="{% url 'gateway:config_suppliers' %}">{% ui "gateway.nav.config_suppliers" %}</a>
         </div>
         {% endif %}
 

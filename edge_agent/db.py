@@ -8,8 +8,6 @@ MARIADB_PORT = int(os.environ.get('MARIADB_PORT', '3306'))
 MARIADB_DATABASE = os.environ.get('MARIADB_DATABASE')
 MARIADB_USER = os.environ.get('MARIADB_USER')
 MARIADB_PASSWORD = os.environ.get('MARIADB_PASSWORD')
-ID_CENTRO = int(os.environ.get('ID_CENTRO', '0'))
-ID_ALMACEN = int(os.environ.get('ID_ALMACEN', '0'))
 
 MSSQL_HOST = os.environ.get('MSSQL_HOST')
 MSSQL_DATABASE = os.environ.get('MSSQL_DATABASE')
@@ -21,22 +19,32 @@ def _normalize(value):
     return (value or '').strip().upper()
 
 
-def _query_stock():
-    """Stock total por artículo: MariaDB, vista StockDisponibleCentroAlmacen,
-    filtrada por idCentro/idAlmacen, agrupada, negativos a 0. Replica la
-    consulta 1 del Power BI original (Table.Group + negativos a cero)."""
-    conn = pymysql.connect(
+def _mariadb_connect():
+    return pymysql.connect(
         host=MARIADB_HOST, port=MARIADB_PORT, user=MARIADB_USER,
         password=MARIADB_PASSWORD, database=MARIADB_DATABASE,
     )
+
+
+def _query_stock(ubicaciones):
+    """Stock total por artículo: MariaDB, vista StockDisponibleCentroAlmacen,
+    agrupada, negativos a 0. Esta vista no distingue por zona (igual que
+    en el Power Query original), así que se filtra por los pares
+    (idCentro, idAlmacen) distintos de `ubicaciones` — varias filas con
+    el mismo par y distinta zona no deben filtrar de más."""
+    if not ubicaciones:
+        return {}
+    pares = sorted({(u['id_centro'], u['id_almacen']) for u in ubicaciones})
+    condiciones = ' OR '.join('(idCentro = %s AND idAlmacen = %s)' for _ in pares)
+    parametros = [valor for par in pares for valor in par]
+
+    conn = _mariadb_connect()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                'SELECT idArticulo, GREATEST(SUM(stock), 0) AS Suma_Stock '
-                'FROM StockDisponibleCentroAlmacen '
-                'WHERE idCentro = %s AND idAlmacen = %s '
-                'GROUP BY idArticulo',
-                (ID_CENTRO, ID_ALMACEN),
+                f'SELECT idArticulo, GREATEST(SUM(stock), 0) AS Suma_Stock '
+                f'FROM StockDisponibleCentroAlmacen WHERE {condiciones} GROUP BY idArticulo',
+                parametros,
             )
             return {_normalize(id_articulo): float(suma_stock) for id_articulo, suma_stock in cur.fetchall()}
     finally:
@@ -45,7 +53,8 @@ def _query_stock():
 
 def _query_familias():
     """Familia de cada artículo: SQL Server dbo.ARTICULO (CODART/CAR1),
-    usada solo para poder aplicar las reglas de exclusión por familia."""
+    usada para las reglas de exclusión por familia y para mostrarla en
+    Stock (columna FAMILIA)."""
     conn = pytds.connect(
         server=MSSQL_HOST, database=MSSQL_DATABASE,
         user=MSSQL_USER, password=MSSQL_PASSWORD,
@@ -58,12 +67,101 @@ def _query_familias():
         conn.close()
 
 
-def get_stock_actual(exclusion_rules=None, **params):
-    """Stock actual por artículo, excluyendo los códigos/familias marcados
-    como regla de exclusión. Las reglas llegan ya calculadas desde servidor Y
-    (tabla ExclusionRule, editada desde /gateway/config/) dentro del propio
-    mensaje de la consulta — este agente no guarda nada en disco ni habla
-    con Google Sheets, solo las usa en memoria para esta petición.
+def query_hueco_breakdown(ubicaciones, tipos_excluidos=None):
+    """Cruce ArticuloHuecoStock + Hueco + TipoHueco, compartido por Stock
+    y Stock Tabla: desglose de stock por artículo en Picking (tipoHueco=1)
+    y Almacenamiento (tipoHueco=2) — así los calcula el Power BI original
+    (FxSumaPorTipo con esos dos ids fijos, no una categorización nuestra).
+
+    `ubicaciones`: [{'id_centro':6,'id_almacen':1,'id_zona':1}, ...] — se
+    filtra por cualquiera de las combinaciones dadas (antes fijo por
+    variable de entorno + idZona=1 hardcodeado).
+    `tipos_excluidos`: ids de TipoHueco a excluir del todo (p.ej. 9 =
+    Salida, excluido por defecto) — configurable en
+    /gateway/config/tipos-hueco/, antes hardcodeado en el propio SQL.
+    `idCalle <> 0` se mantiene fijo: 0 significa "sin calle asignada", es
+    un filtro de calidad de datos, no una decisión de negocio.
+
+    Devuelve (breakdown, tipos_vistos):
+    - breakdown: {idArticulo: {'Picking':, 'Almacenamiento':,
+      'Etiquetas_Picking':, 'Etiquetas_Almacenamiento':}}
+    - tipos_vistos: [{'id_tipo_hueco':, 'descripcion':}, ...] — todos los
+      tipos que aparecen realmente en la BD, para que servidor Y registre
+      los que no conozca todavía (ver
+      gateway/views.py::_registrar_tipos_hueco_nuevos).
+    """
+    if not ubicaciones:
+        return {}, []
+
+    condiciones = ' OR '.join(
+        '(ae.idCentro = %s AND ae.idAlmacen = %s AND ae.idZona = %s)' for _ in ubicaciones
+    )
+    parametros = []
+    for u in ubicaciones:
+        parametros += [u['id_centro'], u['id_almacen'], u['id_zona']]
+
+    sql = (
+        'SELECT ae.idArticulo, ae.unidad1, h.tipoHueco, th.descripcion, h.etiqueta '
+        'FROM ArticuloHuecoStock ae '
+        'JOIN Hueco h '
+        '  ON h.idCentro = ae.idCentro AND h.idAlmacen = ae.idAlmacen AND h.idZona = ae.idZona '
+        '  AND h.idCalle = ae.idCalle AND h.idSeccion = ae.idSeccion AND h.idNivel = ae.idNivel '
+        '  AND h.idHueco = ae.idHueco AND h.idSubhueco = ae.idSubHueco '
+        'JOIN TipoHueco th ON th.idTipoHueco = h.tipoHueco '
+        f'WHERE ({condiciones}) AND h.idCalle <> 0'
+    )
+    tipos_excluidos = list(tipos_excluidos or [])
+    if tipos_excluidos:
+        placeholders = ', '.join(['%s'] * len(tipos_excluidos))
+        sql += f' AND h.tipoHueco NOT IN ({placeholders})'
+        parametros += tipos_excluidos
+
+    conn = _mariadb_connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, parametros)
+            filas = cur.fetchall()
+    finally:
+        conn.close()
+
+    breakdown = {}
+    tipos_vistos = {}
+    for id_articulo, unidad1, id_tipo_hueco, descripcion, etiqueta in filas:
+        clave = _normalize(id_articulo)
+        unidad1 = float(unidad1 or 0)
+        tipos_vistos[id_tipo_hueco] = (descripcion or '').strip()
+
+        fila = breakdown.setdefault(clave, {
+            'Picking': 0.0, 'Almacenamiento': 0.0,
+            'Etiquetas_Picking': set(), 'Etiquetas_Almacenamiento': set(),
+        })
+        if id_tipo_hueco == 1:
+            fila['Picking'] += unidad1
+            if etiqueta:
+                fila['Etiquetas_Picking'].add(etiqueta.strip())
+        elif id_tipo_hueco == 2:
+            fila['Almacenamiento'] += unidad1
+            if etiqueta:
+                fila['Etiquetas_Almacenamiento'].add(etiqueta.strip())
+
+    for fila in breakdown.values():
+        fila['Etiquetas_Picking'] = ', '.join(sorted(fila['Etiquetas_Picking'])) or None
+        fila['Etiquetas_Almacenamiento'] = ', '.join(sorted(fila['Etiquetas_Almacenamiento'])) or None
+
+    tipos_vistos_lista = [
+        {'id_tipo_hueco': id_tipo, 'descripcion': desc} for id_tipo, desc in tipos_vistos.items()
+    ]
+    return breakdown, tipos_vistos_lista
+
+
+def get_stock_actual(exclusion_rules=None, ubicaciones=None, tipos_excluidos=None, **params):
+    """Stock actual por artículo: Stock_Disponible (StockDisponibleCentroAlmacen)
+    + Stock_Picking/Stock_Almacenamiento/Etiquetas (query_hueco_breakdown)
+    + FAMILIA (dbo.ARTICULO), excluyendo los códigos/familias marcados
+    como regla de exclusión. `ubicaciones`/`exclusion_rules`/
+    `tipos_excluidos` llegan ya calculados desde servidor Y en cada
+    petición — este agente no guarda nada en disco ni habla con Google
+    Sheets, solo los usa en memoria para esta petición.
     """
     codigos_excluidos = set()
     familias_excluidas = set()
@@ -76,15 +174,26 @@ def get_stock_actual(exclusion_rules=None, **params):
         elif rule.get('tipo') == 'familia':
             familias_excluidas.add(valor)
 
-    stock = _query_stock()
+    ubicaciones = ubicaciones or []
+    stock = _query_stock(ubicaciones)
     familias = _query_familias()
+    huecos, tipos_vistos = query_hueco_breakdown(ubicaciones, tipos_excluidos)
 
     rows = []
     for id_articulo, suma_stock in stock.items():
         familia = familias.get(id_articulo, '')
         if id_articulo in codigos_excluidos or familia in familias_excluidas:
             continue
-        rows.append({'idArticulo': id_articulo, 'Suma_Stock': suma_stock})
+        hueco = huecos.get(id_articulo, {})
+        rows.append({
+            'idArticulo': id_articulo,
+            'FAMILIA': familia,
+            'Stock_Disponible': suma_stock,
+            'Stock_Picking': hueco.get('Picking', 0.0),
+            'Stock_Almacenamiento': hueco.get('Almacenamiento', 0.0),
+            'Etiquetas_Picking': hueco.get('Etiquetas_Picking'),
+            'Etiquetas_Almacenamiento': hueco.get('Etiquetas_Almacenamiento'),
+        })
 
     rows.sort(key=lambda row: row['idArticulo'])
-    return rows
+    return {'rows': rows, 'tipos_hueco_descubiertos': tipos_vistos}

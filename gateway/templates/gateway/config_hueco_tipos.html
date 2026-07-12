@@ -9,37 +9,34 @@
     <p class="text-muted">{% ui "gateway.config.hueco_tipos_help" %}</p>
 
     {% comment %}
-    Esta lista no tiene formulario de "añadir": las descripciones las
-    descubre equipo X directamente en la BD real (TipoHueco.descripcion)
-    y se registran solas aquí sin clasificar, listas para revisar.
+    Esta lista no tiene formulario de "añadir": los tipos (id + descripción)
+    los descubre equipo X directamente en la BD real (TipoHueco) y se
+    registran solos aquí — incluidos por defecto, salvo Salida (id 9) —
+    listos para que el usuario los revise.
     {% endcomment %}
     {% for ht in hueco_tipos %}
     <form id="ht-save-{{ ht.id }}" method="post" action="{% url 'gateway:config_save_hueco_tipo' ht.id %}">{% csrf_token %}</form>
-    <form id="ht-delete-{{ ht.id }}" method="post" action="{% url 'gateway:config_delete_hueco_tipo' ht.id %}">{% csrf_token %}</form>
     {% endfor %}
 
     <table style="width:100%; border-collapse: collapse;">
         <thead>
             <tr>
+                <th style="text-align:left; padding: var(--spacing-sm);">{% ui "gateway.config.hueco_tipos_id" %}</th>
                 <th style="text-align:left; padding: var(--spacing-sm);">{% ui "gateway.config.hueco_tipos_descripcion" %}</th>
-                <th style="text-align:left; padding: var(--spacing-sm);">{% ui "gateway.config.hueco_tipos_categoria" %}</th>
+                <th style="text-align:left; padding: var(--spacing-sm);">{% ui "gateway.config.hueco_tipos_incluido" %}</th>
                 <th></th>
             </tr>
         </thead>
         <tbody>
         {% for ht in hueco_tipos %}
             <tr>
+                <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">{{ ht.id_tipo_hueco }}</td>
                 <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">{{ ht.descripcion }}</td>
                 <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">
-                    <select form="ht-save-{{ ht.id }}" name="categoria">
-                        {% for value, label in categorias %}
-                        <option value="{{ value }}"{% if ht.categoria == value %} selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
+                    <input form="ht-save-{{ ht.id }}" type="checkbox" name="incluido"{% if ht.activo %} checked{% endif %}>
                 </td>
                 <td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border); text-align:right; white-space:nowrap;">
                     <button form="ht-save-{{ ht.id }}" type="submit" class="button">{% ui "gateway.config.save_button" %}</button>
-                    <button form="ht-delete-{{ ht.id }}" type="submit" class="button" style="background: var(--color-danger);">{% ui "gateway.config.delete_button" %}</button>
                 </td>
             </tr>
         {% empty %}

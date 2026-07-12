@@ -76,32 +76,57 @@ class SupplierCategory(models.Model):
 
 
 class HuecoTipoCategoria(models.Model):
-    """Cómo clasificar cada tipo de hueco físico (TipoHueco.descripcion en
-    MariaDB) dentro de Stock Tabla: Picking, Almacenamiento, o Ignorar.
+    """Filtro de inclusión/exclusión sobre los tipos de hueco físico reales
+    de MariaDB (TipoHueco: Picking, Almacenamiento, Carro, Entrada,
+    Salida...). `activo=False` excluye ese tipo por completo del cálculo
+    de stock (Stock y Stock Tabla) — no es una categorización, Picking y
+    Almacenamiento como columnas son siempre los tipoHueco 1 y 2 fijos
+    (así los calcula el Power BI original).
 
-    No se adivina por código (antes se hacía por substring 'PICKING'/
-    'ALMACEN' y podía perder tipos no reconocidos): equipo X manda la
-    lista de descripciones que encuentra realmente en la BD y aquí se
-    registran automáticamente (activas, sin clasificar) para que el
-    usuario las revise y las reclasifique si hace falta — ver
+    Keyed por id_tipo_hueco (la clave real de TipoHueco.idTipoHueco en
+    MariaDB), no por el texto: equipo X manda de vuelta los tipos que ve
+    realmente en la BD (id + descripción) y aquí se registran solos
+    (activos, salvo el 9 = Salida, excluido por defecto — igual que el
+    filtro que traía el Power BI original) para que el usuario los
+    revise en /gateway/config/tipos-hueco/ — ver
     gateway/views.py::_registrar_tipos_hueco_nuevos."""
 
-    class Categoria(models.TextChoices):
-        PICKING = 'picking', 'Picking'
-        ALMACENAMIENTO = 'almacenamiento', 'Almacenamiento'
-        IGNORAR = 'ignorar', 'Ignorar (no clasificar)'
-
-    descripcion = models.CharField(max_length=100, unique=True)
-    categoria = models.CharField(max_length=20, choices=Categoria.choices, default=Categoria.IGNORAR)
+    id_tipo_hueco = models.PositiveIntegerField(unique=True)
+    descripcion = models.CharField(max_length=100)
     activo = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['descripcion']
+        ordering = ['id_tipo_hueco']
         verbose_name_plural = 'Hueco tipo categorias'
 
     def __str__(self):
-        return f'{self.descripcion} ({self.get_categoria_display()})'
+        return f'{self.id_tipo_hueco} - {self.descripcion} ({"incluido" if self.activo else "excluido"})'
+
+
+class UbicacionAlmacen(models.Model):
+    """Combinación (centro, almacén, zona) de MariaDB a incluir en los
+    cálculos de stock por hueco. Antes eran variables de entorno fijas en
+    equipo X (ID_CENTRO/ID_ALMACEN, más idZona=1 hardcodeado); ahora es
+    configuración editable — añadir una fila es, por ejemplo, sumar una
+    segunda zona sin tocar código ni redeploy."""
+
+    id_centro = models.PositiveIntegerField()
+    id_almacen = models.PositiveIntegerField()
+    id_zona = models.PositiveIntegerField()
+    activo = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id_centro', 'id_almacen', 'id_zona']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['id_centro', 'id_almacen', 'id_zona'], name='unique_ubicacion_almacen',
+            ),
+        ]
+
+    def __str__(self):
+        return f'Centro {self.id_centro} / Almacén {self.id_almacen} / Zona {self.id_zona}'
 
 
 class Page(models.Model):

@@ -15,50 +15,56 @@
     </div>
     <p id="stock-error" style="color: var(--color-danger); display: none;"></p>
 
-    <table id="stock-table" style="width: 100%; margin-top: var(--spacing-md); border-collapse: collapse; display: none;">
-        <thead>
-            <tr>
-                <th style="text-align:left; border-bottom: 1px solid var(--color-border); padding: var(--spacing-sm);">Artículo</th>
-                <th style="text-align:left; border-bottom: 1px solid var(--color-border); padding: var(--spacing-sm);">Stock</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
+    <div style="overflow-x: auto;">
+        <table id="stock-table" style="width: 100%; margin-top: var(--spacing-md); border-collapse: collapse; display: none; white-space: nowrap;">
+            <thead><tr></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
 </div>
 
 <script>
 let stockRows = [];
 
-function renderRows(rows) {
-    const tableEl = document.getElementById('stock-table');
-    const tbody = tableEl.querySelector('tbody');
-    tbody.innerHTML = '';
-    for (const row of rows) {
-        const tr = document.createElement('tr');
-        tr.innerHTML =
-            '<td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">' + row.idArticulo + '</td>' +
-            '<td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">' + row.Suma_Stock + '</td>';
-        tbody.appendChild(tr);
-    }
-    tableEl.style.display = rows.length ? 'table' : 'none';
+function celda(valor) {
+    return valor === null || valor === undefined ? '' : valor;
 }
 
-document.getElementById('search-input').addEventListener('input', function () {
-    const term = this.value.trim().toUpperCase();
-    const filtered = term
-        ? stockRows.filter((row) => String(row.idArticulo).toUpperCase().includes(term))
+function pintarCabecera(columnas) {
+    const thead = document.querySelector('#stock-table thead tr');
+    thead.innerHTML = columnas.map(
+        (c) => '<th style="text-align:left; border-bottom: 1px solid var(--color-border); padding: var(--spacing-sm);">' + c.replace(/_/g, ' ') + '</th>'
+    ).join('');
+}
+
+function pintarFilas(filas, columnas) {
+    const tbody = document.querySelector('#stock-table tbody');
+    tbody.innerHTML = filas.map((fila) =>
+        '<tr>' + columnas.map(
+            (c) => '<td style="padding: var(--spacing-sm); border-bottom: 1px solid var(--color-border);">' + celda(fila[c]) + '</td>'
+        ).join('') + '</tr>'
+    ).join('');
+    document.getElementById('stock-table').style.display = filas.length ? 'table' : 'none';
+}
+
+function aplicarFiltro() {
+    if (!stockRows.length) return;
+    const columnas = Object.keys(stockRows[0]);
+    const term = document.getElementById('search-input').value.trim().toUpperCase();
+    const filtradas = term
+        ? stockRows.filter((row) => String(row.idArticulo || '').toUpperCase().includes(term))
         : stockRows;
-    renderRows(filtered);
-});
+    pintarFilas(filtradas, columnas);
+}
+
+document.getElementById('search-input').addEventListener('input', aplicarFiltro);
 
 document.getElementById('btn-stock').addEventListener('click', async function () {
     const button = this;
     const errorEl = document.getElementById('stock-error');
-    const tableEl = document.getElementById('stock-table');
 
     button.disabled = true;
     errorEl.style.display = 'none';
-    tableEl.style.display = 'none';
 
     try {
         const response = await fetch("{% url 'gateway:stock_actual_api' %}");
@@ -72,7 +78,10 @@ document.getElementById('btn-stock').addEventListener('click', async function ()
 
         stockRows = data.rows;
         document.getElementById('search-input').value = '';
-        renderRows(stockRows);
+        if (stockRows.length) {
+            pintarCabecera(Object.keys(stockRows[0]));
+        }
+        aplicarFiltro();
     } catch (err) {
         errorEl.textContent = '{% ui "gateway.stock.error_prefix" %}: ' + err;
         errorEl.style.display = 'block';

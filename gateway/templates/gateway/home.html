@@ -19,16 +19,20 @@
 
     {% if request.user.is_staff %}
     <a class="home-card" href="{% url 'gateway:config_exclusion' %}">
-        <div class="home-card__group">{% ui "gateway.nav.group_config" %}</div>
+        <div class="home-card__group">{% ui "gateway.nav.group_config_almacen" %}</div>
         <div class="home-card__title">{% ui "gateway.nav.config_exclusion" %}</div>
     </a>
-    <a class="home-card" href="{% url 'gateway:config_suppliers' %}">
-        <div class="home-card__group">{% ui "gateway.nav.group_config" %}</div>
-        <div class="home-card__title">{% ui "gateway.nav.config_suppliers" %}</div>
-    </a>
     <a class="home-card" href="{% url 'gateway:config_hueco_tipos' %}">
-        <div class="home-card__group">{% ui "gateway.nav.group_config" %}</div>
+        <div class="home-card__group">{% ui "gateway.nav.group_config_almacen" %}</div>
         <div class="home-card__title">{% ui "gateway.nav.config_hueco_tipos" %}</div>
+    </a>
+    <a class="home-card" href="{% url 'gateway:config_ubicaciones' %}">
+        <div class="home-card__group">{% ui "gateway.nav.group_config_almacen" %}</div>
+        <div class="home-card__title">{% ui "gateway.nav.config_ubicaciones" %}</div>
+    </a>
+    <a class="home-card" href="{% url 'gateway:config_suppliers' %}">
+        <div class="home-card__group">{% ui "gateway.nav.group_config_compras" %}</div>
+        <div class="home-card__title">{% ui "gateway.nav.config_suppliers" %}</div>
     </a>
     {% endif %}
 

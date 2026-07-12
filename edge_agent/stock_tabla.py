@@ -16,16 +16,23 @@ import datetime
 import logging
 import time
 
-import pymysql
 import pytds
 
 import cache
-from db import ID_ALMACEN, ID_CENTRO, MARIADB_DATABASE, MARIADB_HOST, MARIADB_PASSWORD, MARIADB_PORT, MARIADB_USER
 from db import MSSQL_DATABASE, MSSQL_HOST, MSSQL_PASSWORD, MSSQL_USER
 from db import _normalize
 from db import _query_stock as _query_stock_innertia
+from db import query_hueco_breakdown
 
 log = logging.getLogger('edge_agent')
+
+# Última configuración de ubicaciones/tipos-de-hueco vista en una petición
+# real (ver get_stock_tabla). El cruce Hueco/TipoHueco corre en el ciclo
+# de fondo de 15s, no por petición, así que no puede recibir estos
+# parámetros directamente cada vez — se apoya en la última que llegó por
+# el camino normal, con un desfase de como mucho un ciclo (insignificante
+# para una config que un admin cambia de vez en cuando a mano).
+_ULTIMA_CONFIG_UBICACION = {'ubicaciones': [], 'tipos_excluidos': set()}
 
 # Umbrales de tamaño (Volumetría), fijos — no vienen de ninguna BD.
 VOLUMETRIA = {
@@ -46,13 +53,6 @@ MULTIPLICADOR_DEFECTO = {'min': 1.0, 'max': 1.0, 'punto': 1.0}
 
 def _mssql_connect():
     return pytds.connect(server=MSSQL_HOST, database=MSSQL_DATABASE, user=MSSQL_USER, password=MSSQL_PASSWORD)
-
-
-def _mariadb_connect():
-    return pymysql.connect(
-        host=MARIADB_HOST, port=MARIADB_PORT, user=MARIADB_USER,
-        password=MARIADB_PASSWORD, database=MARIADB_DATABASE,
-    )
 
 
 def _query_stock_raw():
@@ -206,52 +206,6 @@ def _mejores_ventas_por_articulo(anio):
     return resultado
 
 
-def _query_agrupacion_y_etiquetado():
-    """Vista ArticuloHuecoStock (idCentro=6, idAlmacen=1, idZona=1) +
-    Hueco + TipoHueco: desglose de stock por artículo por cada tipo de
-    hueco físico real (TipoHueco.descripcion tal cual viene de la BD, sin
-    adivinar aquí si es Picking/Almacenamiento — eso lo decide la
-    configuración de servidor Y en build_rows). Devuelve:
-    - tipos_hueco_raw: {idArticulo: {descripcion: unidades}}
-    - etiquetas_raw: {idArticulo: {descripcion: set(etiquetas)}}
-    """
-    conn = _mariadb_connect()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                'SELECT ae.idArticulo, ae.unidad1, h.etiqueta, th.descripcion '
-                'FROM ArticuloHuecoStock ae '
-                'JOIN Hueco h '
-                '  ON h.idCentro = ae.idCentro AND h.idAlmacen = ae.idAlmacen AND h.idZona = ae.idZona '
-                '  AND h.idCalle = ae.idCalle AND h.idSeccion = ae.idSeccion AND h.idNivel = ae.idNivel '
-                '  AND h.idHueco = ae.idHueco AND h.idSubhueco = ae.idSubHueco '
-                'JOIN TipoHueco th ON th.idTipoHueco = h.tipoHueco '
-                'WHERE ae.idCentro = %s AND ae.idAlmacen = %s AND ae.idZona = 1',
-                (ID_CENTRO, ID_ALMACEN),
-            )
-            filas = cur.fetchall()
-    finally:
-        conn.close()
-
-    tipos_hueco_raw = {}
-    etiquetas_raw = {}
-    for id_articulo, unidad1, etiqueta, descripcion in filas:
-        clave = _normalize(id_articulo)
-        descripcion_norm = (descripcion or '').strip()
-        if not descripcion_norm:
-            continue
-        unidad1 = float(unidad1 or 0)
-
-        por_tipo = tipos_hueco_raw.setdefault(clave, {})
-        por_tipo[descripcion_norm] = por_tipo.get(descripcion_norm, 0.0) + unidad1
-
-        if etiqueta:
-            por_tipo_etq = etiquetas_raw.setdefault(clave, {})
-            por_tipo_etq.setdefault(descripcion_norm, set()).add(etiqueta.strip())
-
-    return tipos_hueco_raw, etiquetas_raw
-
-
 def _calcular_size(id_articulo, descripcion, familia, stock_min_semanal):
     texto = f'{descripcion or ""} {familia or ""}'.upper()
     if '400' in texto:
@@ -299,24 +253,22 @@ def _refrescar_ventas_y_huecos():
     ventas_actual = _mejores_ventas_por_articulo(anio_actual)
     ventas_anterior = _mejores_ventas_por_articulo(anio_actual - 1)
     t1 = time.monotonic()
-    stock_innertia = _query_stock_innertia()
+    ubicaciones = _ULTIMA_CONFIG_UBICACION['ubicaciones']
+    tipos_excluidos = _ULTIMA_CONFIG_UBICACION['tipos_excluidos']
+    stock_innertia = _query_stock_innertia(ubicaciones)
     t2 = time.monotonic()
-    tipos_hueco_raw, etiquetas_raw = _query_agrupacion_y_etiquetado()
+    huecos, tipos_vistos = query_hueco_breakdown(ubicaciones, tipos_excluidos)
     t3 = time.monotonic()
     log.info(
         'ventas=%.1fs stock_innertia=%.1fs tipos_hueco=%.1fs',
         t1 - t0, t2 - t1, t3 - t2,
     )
-    tipos_descubiertos = set()
-    for tipos in tipos_hueco_raw.values():
-        tipos_descubiertos.update(tipos.keys())
     return {
         'ventas_actual': ventas_actual,
         'ventas_anterior': ventas_anterior,
         'stock_innertia': stock_innertia,
-        'tipos_hueco_raw': tipos_hueco_raw,
-        'etiquetas_raw': etiquetas_raw,
-        'tipos_hueco_descubiertos': sorted(tipos_descubiertos),
+        'huecos': huecos,
+        'tipos_hueco_descubiertos': tipos_vistos,
     }
 
 
@@ -337,8 +289,7 @@ def _merge_base_data():
     ventas_actual = resto['ventas_actual']
     ventas_anterior = resto['ventas_anterior']
     stock_innertia = resto['stock_innertia']
-    tipos_hueco_raw = resto['tipos_hueco_raw']
-    etiquetas_raw = resto['etiquetas_raw']
+    huecos = resto['huecos']
 
     base_rows = []
     for codart, base in stock.items():
@@ -365,8 +316,7 @@ def _merge_base_data():
         stock_inn_reserva_b = total_stock_ita + base['Reserva B']
         stock_inn_reserva_a_b = stock_inn_reserva_a + base['Reserva B']
 
-        tipos_articulo = tipos_hueco_raw.get(codart, {})
-        etiquetas_articulo = etiquetas_raw.get(codart, {})
+        hueco = huecos.get(codart, {})
 
         base_rows.append({
             # CODART va primero a propósito: el frontend fija (sticky) la
@@ -400,42 +350,22 @@ def _merge_base_data():
             'Stock_Inn_mas_Reserva_A': stock_inn_reserva_a,
             'Stock_Inn_mas_Reserva_B': stock_inn_reserva_b,
             'Stock_Inn_mas_Reserva_A_mas_B': stock_inn_reserva_a_b,
-            '_tipos_hueco_raw': tipos_articulo,
-            '_etiquetas_raw': etiquetas_articulo,
+            'Picking': hueco.get('Picking', 0.0),
+            'Almacenamiento': hueco.get('Almacenamiento', 0.0),
+            'Etiquetas_Picking': hueco.get('Etiquetas_Picking'),
+            'Etiquetas_Almacenamiento': hueco.get('Etiquetas_Almacenamiento'),
         })
     return {'rows': base_rows, 'tipos_hueco_descubiertos': resto['tipos_hueco_descubiertos']}
 
 
-def _bucket_tipos_hueco(tipos_raw, mapeo_categoria):
-    """Reparte {descripcion: unidades} en Picking/Almacenamiento/
-    Sin_Clasificar según la configuración que llega de servidor Y
-    (mapeo_categoria: descripcion -> 'picking'/'almacenamiento'/'ignorar').
-    Cualquier descripción que todavía no esté configurada cae en
-    Sin_Clasificar — nunca desaparece stock en silencio."""
-    totales = {'picking': 0.0, 'almacenamiento': 0.0, 'ignorar': 0.0}
-    for descripcion, unidades in tipos_raw.items():
-        categoria = mapeo_categoria.get(descripcion, 'ignorar')
-        totales[categoria if categoria in totales else 'ignorar'] += unidades
-    return totales
-
-
-def _bucket_etiquetas_hueco(etiquetas_raw, mapeo_categoria):
-    grupos = {'picking': set(), 'almacenamiento': set(), 'ignorar': set()}
-    for descripcion, etiquetas in etiquetas_raw.items():
-        categoria = mapeo_categoria.get(descripcion, 'ignorar')
-        grupos[categoria if categoria in grupos else 'ignorar'].update(etiquetas)
-    return {
-        clave: ', '.join(sorted(valores)) or None
-        for clave, valores in grupos.items()
-    }
-
-
-def build_rows(base_data, supplier_categories=None, hueco_tipos=None):
-    """Aplica configuración que solo llega por petición desde servidor Y
-    (categoría de proveedor, clasificación de tipos de hueco) sobre la
-    base ya precalculada por _compute_base_data(). Cálculo puro en
-    memoria, sin ninguna consulta a BD — esta es la parte que sí corre en
-    el camino crítico de cada petición, y por eso tiene que ser barata.
+def build_rows(base_data, supplier_categories=None):
+    """Aplica la categoría de proveedor (llega por petición desde
+    servidor Y) sobre la base ya precalculada por _merge_base_data().
+    Picking/Almacenamiento/Etiquetas ya vienen calculados en `base_data`
+    (ver query_hueco_breakdown en db.py) — aquí no hay que tocarlos.
+    Cálculo puro en memoria, sin ninguna consulta a BD — esta es la parte
+    que sí corre en el camino crítico de cada petición, y por eso tiene
+    que ser barata.
     """
     categorias = {
         _normalize(row.get('codpro')): {
@@ -444,7 +374,6 @@ def build_rows(base_data, supplier_categories=None, hueco_tipos=None):
         }
         for row in (supplier_categories or [])
     }
-    mapeo_hueco = {row['descripcion']: row['categoria'] for row in (hueco_tipos or [])}
 
     rows = []
     for base in base_data:
@@ -477,12 +406,8 @@ def build_rows(base_data, supplier_categories=None, hueco_tipos=None):
                 else (punto_pedido - base['Stock_Inn_mas_Reserva_A_mas_B'])
             )
 
-        tipos = _bucket_tipos_hueco(base['_tipos_hueco_raw'], mapeo_hueco)
-        etiquetas = _bucket_etiquetas_hueco(base['_etiquetas_raw'], mapeo_hueco)
-        base_sin_internos = {k: v for k, v in base.items() if not k.startswith('_')}
-
         rows.append({
-            **base_sin_internos,
+            **base,
             'Categoria_Organizacion': organizacion,
             'Categoria_Proveedor': categoria,
             'StockMin': stock_min,
@@ -496,31 +421,34 @@ def build_rows(base_data, supplier_categories=None, hueco_tipos=None):
             'Diferencial_Cantidad_Pedido_Innertia': diferencial_cantidad_pedido_inn,
             'Stock_Innertia_dividido_StockMin': round(base['Stock_Total_Innertia'] / stock_min, 2) if stock_min else 0,
             'SIZE': _calcular_size(base['CODART'], base['Descripcion'], base['Familia'], stock_min_semanal),
-            'Picking': tipos['picking'],
-            'Almacenamiento': tipos['almacenamiento'],
-            'Sin_Clasificar': tipos['ignorar'],
-            'Etiquetas_Picking': etiquetas['picking'],
-            'Etiquetas_Almacenamiento': etiquetas['almacenamiento'],
-            'Etiquetas_Sin_Clasificar': etiquetas['ignorar'],
         })
 
     rows.sort(key=lambda r: r['CODART'] or '')
     return rows
 
 
-def get_stock_tabla(supplier_categories=None, hueco_tipos=None, **params):
+def get_stock_tabla(supplier_categories=None, ubicaciones=None, tipos_excluidos=None, **params):
     """Handler registrado en agent.py para la query 'stock_tabla': fusiona
     las dos cachés ya precalculadas en segundo plano (stock_raw cada 30s,
-    ventas/huecos cada 15s — ver agent.py) y les aplica la configuración
-    que llega por petición (categoría de proveedor, clasificación de
-    tipos de hueco). Nunca toca la BD aquí — si el agente acaba de
-    arrancar y todavía no hay ni un ciclo de cada caché completo, informa
-    de ello en vez de bloquear la petición esperando una consulta pesada.
+    ventas/huecos cada 15s — ver agent.py) y les aplica la categoría de
+    proveedor que llega por petición. Nunca toca la BD aquí — si el
+    agente acaba de arrancar y todavía no hay ni un ciclo de cada caché
+    completo, informa de ello en vez de bloquear la petición esperando
+    una consulta pesada.
+
+    `ubicaciones`/`tipos_excluidos`, si llegan, se guardan para que el
+    ciclo de fondo (que sí consulta la BD) los use en su siguiente vuelta
+    — ver _ULTIMA_CONFIG_UBICACION.
     """
+    if ubicaciones:
+        _ULTIMA_CONFIG_UBICACION['ubicaciones'] = ubicaciones
+    if tipos_excluidos is not None:
+        _ULTIMA_CONFIG_UBICACION['tipos_excluidos'] = set(tipos_excluidos)
+
     data = _merge_base_data()
     if data is None:
         raise RuntimeError('cache_warming')
     return {
-        'rows': build_rows(data['rows'], supplier_categories, hueco_tipos),
+        'rows': build_rows(data['rows'], supplier_categories),
         'tipos_hueco_descubiertos': data['tipos_hueco_descubiertos'],
     }

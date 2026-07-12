@@ -24,9 +24,11 @@ urlpatterns = [
     ),
     path('config/tipos-hueco/', views.config_hueco_tipos_view, name='config_hueco_tipos'),
     path('config/tipos-hueco/<int:hueco_tipo_id>/save/', views.config_save_hueco_tipo, name='config_save_hueco_tipo'),
+    path('config/ubicaciones/', views.config_ubicaciones_view, name='config_ubicaciones'),
+    path('config/ubicaciones/add/', views.config_add_ubicacion, name='config_add_ubicacion'),
     path(
-        'config/tipos-hueco/<int:hueco_tipo_id>/delete/',
-        views.config_delete_hueco_tipo,
-        name='config_delete_hueco_tipo',
+        'config/ubicaciones/<int:ubicacion_id>/delete/',
+        views.config_delete_ubicacion,
+        name='config_delete_ubicacion',
     ),
 ]
