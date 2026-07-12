@@ -42,23 +42,21 @@ def _query_stock(ubicaciones):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                f'SELECT idArticulo, stock '
-                f'FROM StockDisponibleCentroAlmacen WHERE {condiciones}',
+                # Se agrupa por UPPER(TRIM(idArticulo)), no por idArticulo
+                # tal cual: si la misma referencia tiene variantes con
+                # espacios/mayúsculas distintas en la BD real, agrupar en
+                # crudo las deja como filas separadas — y como luego se
+                # normalizaba solo en Python con un diccionario armado de
+                # golpe, se perdía todo menos la última fila en vez de
+                # sumarlas. Agrupando ya por la clave normalizada, MariaDB
+                # hace la suma completa y sigue siendo una sola consulta
+                # eficiente (no hace falta traer cada fila suelta).
+                f'SELECT UPPER(TRIM(idArticulo)) AS clave, GREATEST(SUM(stock), 0) AS Suma_Stock '
+                f'FROM StockDisponibleCentroAlmacen WHERE {condiciones} '
+                f'GROUP BY UPPER(TRIM(idArticulo))',
                 parametros,
             )
-            # Sumamos en Python sobre la clave ya normalizada (trim+upper),
-            # no agrupamos en el propio SQL por idArticulo tal cual: si la
-            # misma referencia tiene variantes con espacios/mayúsculas
-            # distintas en la BD, agrupar en crudo las deja como filas
-            # separadas y un diccionario construido de golpe se queda solo
-            # con la última, perdiendo stock en vez de sumarlo.
-            totales = {}
-            for id_articulo, stock in cur.fetchall():
-                clave = _normalize(id_articulo)
-                if not clave:
-                    continue
-                totales[clave] = totales.get(clave, 0.0) + float(stock or 0)
-            return {clave: max(total, 0.0) for clave, total in totales.items()}
+            return {clave: float(suma_stock or 0) for clave, suma_stock in cur.fetchall() if clave}
     finally:
         conn.close()
 
