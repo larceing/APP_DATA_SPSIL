@@ -32,4 +32,6 @@ urlpatterns = [
         views.config_delete_ubicacion,
         name='config_delete_ubicacion',
     ),
+    path('config/stock-tabla/', views.config_stock_tabla_view, name='config_stock_tabla'),
+    path('config/stock-tabla/save/', views.config_save_stock_tabla, name='config_save_stock_tabla'),
 ]

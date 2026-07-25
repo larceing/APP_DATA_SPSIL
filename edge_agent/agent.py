@@ -8,19 +8,28 @@ import websockets
 
 import cache
 from db import get_stock_actual
-from stock_tabla import _refrescar_stock_raw, _refrescar_ventas_y_huecos, get_stock_tabla
+from stock_tabla import _refrescar_stock_raw, _refrescar_ventas_y_huecos, get_stock_tabla, set_activo
 
 GATEWAY_URL = os.environ['GATEWAY_URL']  # p.ej. wss://y.example.com/ws/gateway/nave-central/
 NODE_TOKEN = os.environ['NODE_TOKEN']
 # Ventas/huecos ya son baratos (~1s): refresco frecuente. VW_OFERTAS_STOCK_RAW
-# se llama entera sin filtro (~26s) y no admite "mini updates" como ventas,
-# así que va en su propio ciclo, más espaciado, para no frenar lo demás.
+# se llama entera sin filtro y tarda ~27s en sí misma — con 30s de
+# intervalo se repetía prácticamente sin parar, día y noche, aunque nadie
+# estuviera mirando Stock Tabla (carga constante e innecesaria sobre SQL
+# Server y la red de equipo X). Stock/ventas de los últimos 30 días no
+# necesitan frescura al segundo para un informe de compras, así que el
+# intervalo por defecto sube a 10 minutos — sigue siendo configurable por
+# variable de entorno si hiciera falta otro valor.
 STOCK_TABLA_REFRESH_SECONDS = int(os.environ.get('STOCK_TABLA_REFRESH_SECONDS', '15'))
-STOCK_RAW_REFRESH_SECONDS = int(os.environ.get('STOCK_RAW_REFRESH_SECONDS', '30'))
+STOCK_RAW_REFRESH_SECONDS = int(os.environ.get('STOCK_RAW_REFRESH_SECONDS', '600'))
 
 QUERY_HANDLERS = {
     'stock_actual': get_stock_actual,
     'stock_tabla': get_stock_tabla,
+    # Aviso inmediato desde /gateway/config/stock-tabla/ al guardar el
+    # interruptor de pausa — no consulta nada, solo actualiza el flag en
+    # memoria (ver stock_tabla._CONFIG_ACTIVO).
+    'stock_tabla_config': set_activo,
 }
 
 log = logging.getLogger('edge_agent')

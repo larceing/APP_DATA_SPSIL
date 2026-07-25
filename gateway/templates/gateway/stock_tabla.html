@@ -239,7 +239,17 @@ document.getElementById('btn-stock-tabla').addEventListener('click', async funct
             data = await pedirStockTabla();
         }
 
-        filasTabla = data.rows;
+        // El servidor manda columnas + filas como listas de valores (no
+        // un objeto por fila) para no repetir ~44 nombres de columna en
+        // cada una de las ~2500 filas — aquí se reconstruye el objeto
+        // por fila justo al recibirlas, así el resto de la página sigue
+        // igual que antes.
+        const columnasRecibidas = data.columns || [];
+        filasTabla = (data.rows || []).map((valores) => {
+            const fila = {};
+            columnasRecibidas.forEach((columna, i) => { fila[columna] = valores[i]; });
+            return fila;
+        });
         if (filasTabla.length) {
             const columnas = Object.keys(filasTabla[0]);
             pintarCabecera(columnas);

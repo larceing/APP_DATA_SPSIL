@@ -46,7 +46,7 @@
         ejemplo, solo Exclusiones sin hacer Admin de todo a alguien.
         Admin/Superadmin ven todo (bypass en get_accessible_pages).
         {% endcomment %}
-        {% if 'config-exclusion' in accessible_page_slugs or 'config-hueco-tipos' in accessible_page_slugs or 'config-ubicaciones' in accessible_page_slugs or 'config-proveedores' in accessible_page_slugs %}
+        {% if 'config-exclusion' in accessible_page_slugs or 'config-hueco-tipos' in accessible_page_slugs or 'config-ubicaciones' in accessible_page_slugs or 'config-proveedores' in accessible_page_slugs or 'config-stock-tabla' in accessible_page_slugs %}
         <div class="sidebar__group">
             <div class="sidebar__group-title">{% ui "gateway.nav.group_config" %}</div>
 
@@ -66,10 +66,16 @@
             {% endif %}
             {% endif %}
 
-            {% if 'config-proveedores' in accessible_page_slugs %}
+            {% if 'config-proveedores' in accessible_page_slugs or 'config-stock-tabla' in accessible_page_slugs %}
             <div class="sidebar__subgroup-title">{% ui "gateway.nav.group_config_compras" %}</div>
+            {% if 'config-proveedores' in accessible_page_slugs %}
             <a class="sidebar__link{% if request.resolver_match.url_name == 'config_suppliers' %} active{% endif %}"
                href="{% url 'gateway:config_suppliers' %}">{% ui "gateway.nav.config_suppliers" %}</a>
+            {% endif %}
+            {% if 'config-stock-tabla' in accessible_page_slugs %}
+            <a class="sidebar__link{% if request.resolver_match.url_name == 'config_stock_tabla' %} active{% endif %}"
+               href="{% url 'gateway:config_stock_tabla' %}">{% ui "gateway.nav.config_stock_tabla" %}</a>
+            {% endif %}
             {% endif %}
         </div>
         {% endif %}

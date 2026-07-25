@@ -55,6 +55,12 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Primero de todos a propósito: la compresión debe aplicarse la
+    # última al salir (el orden de MIDDLEWARE se invierte en la
+    # respuesta) — así comprime el JSON ya armado por las vistas, en
+    # particular Stock Tabla (~44 columnas x ~2500 artículos sin
+    # comprimir pesa varios MB).
+    'django.middleware.gzip.GZipMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',

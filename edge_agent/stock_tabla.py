@@ -34,6 +34,25 @@ log = logging.getLogger('edge_agent')
 # para una config que un admin cambia de vez en cuando a mano).
 _ULTIMA_CONFIG_UBICACION = {'ubicaciones': [], 'tipos_excluidos': set()}
 
+# Interruptor de emergencia: si VW_OFERTAS_STOCK_RAW (u otra consulta
+# pesada de Stock Tabla) está machacando el servidor, se puede pausar el
+# refresco en segundo plano desde /gateway/config/stock-tabla/ sin
+# redeploy. Por defecto activo (arranque normal). Se actualiza de dos
+# formas: al momento, con un mensaje aparte (set_activo, registrado en
+# agent.py) que servidor Y manda nada más guardar el checkbox; y de
+# forma duradera, en cada petición real de get_stock_tabla (para que
+# sobreviva a un reinicio del contenedor mientras esté en pausa)."""
+_CONFIG_ACTIVO = {'activo': True}
+
+
+def set_activo(activo=None, **params):
+    """Handler de la query 'stock_tabla_config' (agent.py): aviso
+    inmediato de servidor Y al guardar el checkbox, independiente de que
+    alguien visite Stock Tabla."""
+    if activo is not None:
+        _CONFIG_ACTIVO['activo'] = bool(activo)
+    return {'rows': [], 'activo': _CONFIG_ACTIVO['activo']}
+
 # Umbrales de tamaño (Volumetría), fijos — no vienen de ninguna BD.
 VOLUMETRIA = {
     'GRANDE': {'400ML': 1632, '200ML': 2640},
@@ -234,7 +253,14 @@ def _refrescar_stock_raw():
     un histórico (no admite "mini updates del mes en curso" como ventas),
     así que va en su propia caché con un ciclo más espaciado (30s por
     defecto), independiente del de ventas/huecos (que ya es barato y
-    puede ir cada 15s) — así lo lento no frena lo rápido."""
+    puede ir cada 15s) — así lo lento no frena lo rápido.
+
+    Si _CONFIG_ACTIVO está en pausa, no toca la BD en absoluto y devuelve
+    el último dato ya cacheado tal cual (o vacío, si el agente arrancó en
+    pausa y nunca llegó a calcularlo)."""
+    if not _CONFIG_ACTIVO['activo']:
+        actual = cache.get('stock_raw')
+        return actual['data'] if actual else {}
     t0 = time.monotonic()
     stock = _query_stock_raw()
     log.info('stock_raw=%.1fs', time.monotonic() - t0)
@@ -246,7 +272,18 @@ def _refrescar_ventas_y_huecos():
     es barato de refrescar a menudo — ventas (incremental, ver
     _actualizar_ventas), stock del WMS (Innertia) y el desglose por tipo
     de hueco. Devuelve también tipos_hueco_descubiertos para que servidor
-    Y registre los tipos nuevos en /gateway/config/tipos-hueco/."""
+    Y registre los tipos nuevos en /gateway/config/tipos-hueco/.
+
+    En pausa (_CONFIG_ACTIVO), devuelve el último dato cacheado sin
+    consultar nada, igual que _refrescar_stock_raw."""
+    if not _CONFIG_ACTIVO['activo']:
+        actual = cache.get('stock_tabla_ventas_huecos')
+        if actual:
+            return actual['data']
+        return {
+            'ventas_actual': {}, 'ventas_anterior': {}, 'stock_innertia': {},
+            'huecos': {}, 'tipos_hueco_descubiertos': [],
+        }
     t0 = time.monotonic()
     _actualizar_ventas()
     anio_actual = datetime.date.today().year
@@ -427,7 +464,7 @@ def build_rows(base_data, supplier_categories=None):
     return rows
 
 
-def get_stock_tabla(supplier_categories=None, ubicaciones=None, tipos_excluidos=None, **params):
+def get_stock_tabla(supplier_categories=None, ubicaciones=None, tipos_excluidos=None, activo=None, **params):
     """Handler registrado en agent.py para la query 'stock_tabla': fusiona
     las dos cachés ya precalculadas en segundo plano (stock_raw cada 30s,
     ventas/huecos cada 15s — ver agent.py) y les aplica la categoría de
@@ -438,17 +475,33 @@ def get_stock_tabla(supplier_categories=None, ubicaciones=None, tipos_excluidos=
 
     `ubicaciones`/`tipos_excluidos`, si llegan, se guardan para que el
     ciclo de fondo (que sí consulta la BD) los use en su siguiente vuelta
-    — ver _ULTIMA_CONFIG_UBICACION.
+    — ver _ULTIMA_CONFIG_UBICACION. `activo` igual, para _CONFIG_ACTIVO:
+    así el interruptor de pausa sobrevive a un reinicio del contenedor
+    mientras esté pausado (set_activo ya lo aplica al momento, pero solo
+    vive en memoria hasta el próximo reinicio si nadie vuelve a mandarlo).
     """
     if ubicaciones:
         _ULTIMA_CONFIG_UBICACION['ubicaciones'] = ubicaciones
     if tipos_excluidos is not None:
         _ULTIMA_CONFIG_UBICACION['tipos_excluidos'] = set(tipos_excluidos)
+    if activo is not None:
+        _CONFIG_ACTIVO['activo'] = bool(activo)
 
     data = _merge_base_data()
     if data is None:
         raise RuntimeError('cache_warming')
+    filas = build_rows(data['rows'], supplier_categories)
+
+    # Columnar (columns + rows como listas de valores) en vez de una lista
+    # de diccionarios: con ~44 columnas x ~2500 artículos, repetir el
+    # nombre de cada columna en cada fila infla el JSON un ~65% de más
+    # (medido) — un peso real sobre el ancho de banda del túnel
+    # (equipo X -> servidor Y) en cada "Actualizar". El frontend
+    # reconstruye los objetos por fila nada más recibirlos (ver
+    # stock_tabla.html), así que no cambia nada más de la lógica.
+    columnas = list(filas[0].keys()) if filas else []
     return {
-        'rows': build_rows(data['rows'], supplier_categories),
+        'columns': columnas,
+        'rows': [[fila.get(columna) for columna in columnas] for fila in filas],
         'tipos_hueco_descubiertos': data['tipos_hueco_descubiertos'],
     }

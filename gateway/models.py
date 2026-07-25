@@ -208,3 +208,25 @@ class ActiveSession(models.Model):
 
     def __str__(self):
         return self.user.get_username()
+
+
+class StockTablaConfig(models.Model):
+    """Fila única (interruptor de emergencia): si el refresco en segundo
+    plano de Stock Tabla en equipo X está activo. VW_OFERTAS_STOCK_RAW es
+    una consulta pesada (~27s, sin filtro) que corría cada 30s día y
+    noche aunque nadie mirara la página — desde
+    /gateway/config/stock-tabla/ se puede pausar sin redeploy: al
+    guardar, se avisa al momento por el túnel (query 'stock_tabla_config')
+    y además viaja en cada petición real de Stock Tabla, para que
+    sobreviva a un reinicio del contenedor mientras esté en pausa."""
+
+    activo = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return 'Activo' if self.activo else 'Pausado'

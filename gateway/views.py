@@ -11,7 +11,9 @@ from django.shortcuts import redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
 from .consumers import CONNECTED_NODES
-from .models import ExclusionRule, GatewayNode, HuecoTipoCategoria, SupplierCategory, UbicacionAlmacen
+from .models import (
+    ExclusionRule, GatewayNode, HuecoTipoCategoria, StockTablaConfig, SupplierCategory, UbicacionAlmacen,
+)
 from .permissions import page_required
 from .tabs import check_and_register
 
@@ -25,6 +27,17 @@ def require_get_async(view_func):
     async def wrapped(request, *args, **kwargs):
         if request.method != 'GET':
             return HttpResponseNotAllowed(['GET'])
+        return await view_func(request, *args, **kwargs)
+    return wrapped
+
+
+def require_post_async(view_func):
+    """Equivalente async de @require_POST, para config_save_stock_tabla
+    (necesita ser async para poder avisar a equipo X al momento)."""
+    @wraps(view_func)
+    async def wrapped(request, *args, **kwargs):
+        if request.method != 'POST':
+            return HttpResponseNotAllowed(['POST'])
         return await view_func(request, *args, **kwargs)
     return wrapped
 
@@ -125,7 +138,12 @@ async def _registrar_tipos_hueco_nuevos(tipos_vistos):
         existentes.add(id_tipo_hueco)
 
 
-async def _fetch_stock_tabla_rows():
+async def _fetch_stock_tabla_data():
+    """Devuelve (columns, rows) — columnar, no una lista de diccionarios:
+    con ~44 columnas por artículo, repetir el nombre de cada una en cada
+    fila infla el JSON que cruza el túnel un ~65% de más (medido). El
+    frontend (stock_tabla.html) y el export a Excel reconstruyen lo que
+    necesiten a partir de estas dos listas."""
     supplier_categories = await sync_to_async(list)(
         SupplierCategory.objects.filter(activo=True).values('codpro', 'organizacion', 'categoria')
     )
@@ -133,9 +151,10 @@ async def _fetch_stock_tabla_rows():
         'supplier_categories': supplier_categories,
         'ubicaciones': await _fetch_ubicaciones(),
         'tipos_excluidos': await _fetch_tipos_excluidos(),
+        'activo': await sync_to_async(lambda: StockTablaConfig.get_solo().activo)(),
     })
     await _registrar_tipos_hueco_nuevos(payload.get('tipos_hueco_descubiertos', []))
-    return payload.get('rows', [])
+    return payload.get('columns', []), payload.get('rows', [])
 
 
 @login_required
@@ -206,28 +225,27 @@ def stock_tabla_view(request):
 @require_get_async
 async def stock_tabla_api(request):
     try:
-        rows = await _fetch_stock_tabla_rows()
+        columns, rows = await _fetch_stock_tabla_data()
     except GatewayFetchError as exc:
         return JsonResponse({'error': exc.error}, status=exc.status)
-    return JsonResponse({'rows': rows})
+    return JsonResponse({'columns': columns, 'rows': rows})
 
 
 @page_required('stock-tabla')
 @require_get_async
 async def stock_tabla_export_view(request):
     try:
-        rows = await _fetch_stock_tabla_rows()
+        columns, rows = await _fetch_stock_tabla_data()
     except GatewayFetchError as exc:
         return JsonResponse({'error': exc.error}, status=exc.status)
 
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = 'Stock Tabla'
-    if rows:
-        columns = list(rows[0].keys())
+    if columns:
         sheet.append(columns)
         for row in rows:
-            sheet.append([row.get(col) for col in columns])
+            sheet.append(row)
 
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -345,3 +363,26 @@ def config_add_ubicacion(request):
 def config_delete_ubicacion(request, ubicacion_id):
     UbicacionAlmacen.objects.filter(pk=ubicacion_id).update(activo=False)
     return redirect('gateway:config_ubicaciones')
+
+
+@page_required('config-stock-tabla')
+def config_stock_tabla_view(request):
+    return render(request, 'gateway/config_stock_tabla.html', {
+        'config': StockTablaConfig.get_solo(),
+    })
+
+
+@page_required('config-stock-tabla')
+@require_post_async
+async def config_save_stock_tabla(request):
+    """Guarda el interruptor y avisa a equipo X al momento (query
+    'stock_tabla_config') — si el nodo está desconectado, no pasa nada:
+    el valor ya quedó en BD y viajará en la siguiente petición real de
+    Stock Tabla (ver _fetch_stock_tabla_data)."""
+    activo = request.POST.get('activo') == 'on'
+    await sync_to_async(StockTablaConfig.objects.update_or_create)(pk=1, defaults={'activo': activo})
+    try:
+        await _ask_gateway('stock_tabla_config', {'activo': activo}, timeout=5)
+    except GatewayFetchError:
+        pass
+    return redirect('gateway:config_stock_tabla')
