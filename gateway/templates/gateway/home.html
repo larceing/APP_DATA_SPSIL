@@ -33,9 +33,11 @@ aparte hardcodeado para Configuración (eso duplicaba las tarjetas).
 <div class="home-section">
     <h2 class="home-section__title">{% ui "gateway.nav.group_admin" %}</h2>
     <div class="home-grid">
+        {% if not AUTH_SSO %}
         <a class="home-card" href="{% url 'admin:auth_user_changelist' %}">
             <div class="home-card__title">{% ui "gateway.nav.users" %}</div>
         </a>
+        {% endif %}
         <a class="home-card" href="{% url 'admin:gateway_gatewaynode_changelist' %}">
             <div class="home-card__title">{% ui "gateway.nav.nodes" %}</div>
         </a>

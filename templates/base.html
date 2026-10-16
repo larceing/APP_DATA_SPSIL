@@ -17,7 +17,7 @@
             Ruta fija (sin pasar por el manifest de static): un logo que
             falte no debe tumbar la página entera con un 500.
             {% endcomment %}
-            <img class="sidebar__logo" src="/static/img/Spsil_logo_web.webp" alt="SPSIL" onerror="this.style.display='none'">
+            <img class="sidebar__logo" src="{% get_static_prefix %}img/Spsil_logo_web.webp" alt="SPSIL" onerror="this.style.display='none'">
             SPSIL
         </a>
 
@@ -83,7 +83,9 @@
         {% if request.user.is_superuser %}
         <div class="sidebar__group">
             <div class="sidebar__group-title">{% ui "gateway.nav.group_admin" %}</div>
+            {% if not AUTH_SSO %}
             <a class="sidebar__link" href="{% url 'admin:auth_user_changelist' %}">{% ui "gateway.nav.users" %}</a>
+            {% endif %}
             <a class="sidebar__link" href="{% url 'admin:gateway_gatewaynode_changelist' %}">{% ui "gateway.nav.nodes" %}</a>
         </div>
         {% endif %}
@@ -94,6 +96,9 @@
         <header class="app-header">
             {% if request.user.is_authenticated %}
             <button type="button" id="sidebar-toggle" class="sidebar-toggle" aria-label="Menu">&#9776;</button>
+            {% endif %}
+            {% if PORTAL_URL %}
+            <a class="app-header__portal" href="{{ PORTAL_URL }}">{% ui "gateway.nav.portal" %}</a>
             {% endif %}
             <div class="app-header__right">
                 <span class="badge badge--{{ gateway_status }}" title="{{ gateway_node_name }}">{{ gateway_status }}</span>

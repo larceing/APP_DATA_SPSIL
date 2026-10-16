@@ -9,7 +9,8 @@ Keycloak manda sobre los usuarios: en cada entrada se sincroniza
 - `is_staff`/`is_superuser` con el grupo "IT" (Admin/Superadmin de esta app);
 - las páginas sueltas (`UserProfile.extra_pages`) con los grupos
   "Stock", "Stock Tabla" y "Stock Config" (todas las de configuración).
-El departamento (`UserProfile.department`) se sigue asignando en /admin/.
+Con este modo la administración de usuarios desaparece de /admin/ y del menú;
+el departamento que ya tuviera alguien se conserva, pero no se edita aquí.
 Es el mismo realm que el Gestor de Tareas: entrar en una app vale para la otra.
 """
 import secrets

@@ -1,7 +1,9 @@
 import secrets
 
 from django.contrib import admin, messages
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .consumers import CONNECTED_NODES
@@ -79,4 +81,9 @@ class UserAdmin(DjangoUserAdmin):
 
 
 admin.site.unregister(get_user_model())
-admin.site.register(get_user_model(), UserAdmin)
+if settings.AUTH_MODO == 'sso':
+    # Login único: usuarios, contraseñas y permisos viven en Keycloak (grupos
+    # Stock / Stock Tabla / Stock Config, ver core/sso.py). Aquí no se tocan.
+    admin.site.unregister(Group)
+else:
+    admin.site.register(get_user_model(), UserAdmin)

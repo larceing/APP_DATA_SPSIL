@@ -90,6 +90,7 @@ TEMPLATES = [
                 'gateway.context_processors.accessible_pages',
                 'gateway.context_processors.single_tab_only',
                 'core.context_processors.languages',
+                'core.context_processors.plataforma',
             ],
         },
     },
