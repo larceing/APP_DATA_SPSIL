@@ -175,6 +175,28 @@ CHANNEL_LAYERS = {
     },
 }
 
-LOGIN_URL = '/login/'
-LOGIN_REDIRECT_URL = '/gateway/home/'
-LOGOUT_REDIRECT_URL = '/login/'
+# Nombres de URL (no rutas fijas) para que respeten DJANGO_RUTA_BASE.
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'gateway:home'
+LOGOUT_REDIRECT_URL = 'login'
+
+
+# Publicación bajo una ruta (https://spsil.luiscontacto03.com/stock/): el proxy
+# quita el prefijo al entrar y Django lo vuelve a poner en todos sus enlaces.
+# Vacía = la app en la raíz del dominio, como hasta ahora.
+RUTA_BASE = os.environ.get('DJANGO_RUTA_BASE', '').rstrip('/')
+if RUTA_BASE:
+    FORCE_SCRIPT_NAME = RUTA_BASE
+    STATIC_URL = RUTA_BASE + '/static/'
+    SESSION_COOKIE_PATH = RUTA_BASE + '/'
+    CSRF_COOKIE_PATH = RUTA_BASE + '/'
+    LANGUAGE_COOKIE_PATH = RUTA_BASE + '/'
+
+# Login: local (usuarios de /admin/, como hasta ahora) o sso (Keycloak, el
+# mismo realm que el Gestor de Tareas; ver core/sso.py).
+AUTH_MODO = os.environ.get('AUTH_MODO', 'local').strip().lower()
+KEYCLOAK_ISSUER = os.environ.get('KEYCLOAK_ISSUER', '').rstrip('/')
+KEYCLOAK_CLIENT_ID = os.environ.get('KEYCLOAK_CLIENT_ID', '')
+KEYCLOAK_CLIENT_SECRET = os.environ.get('KEYCLOAK_CLIENT_SECRET', '')
+APP_URL_PUBLICA = os.environ.get('APP_URL_PUBLICA', '')
+SSO_URL_SALIDA = os.environ.get('SSO_URL_SALIDA', '')

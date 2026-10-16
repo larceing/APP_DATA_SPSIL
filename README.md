@@ -221,6 +221,27 @@ entrada a `QUERY_HANDLERS` en `edge_agent/agent.py`, una vista nueva en
 (mismo `new_channel`/`send`/`receive` de siempre), una `Page` nueva (con su
 `group_label` de sidebar) y su plantilla.
 
+## Plataforma SPSIL: /stock y login con Keycloak
+
+En `https://spsil.luiscontacto03.com` las apps de SPSIL cuelgan de una portada
+común (repo `APP_TAREAS_SPSIL`, carpeta `plataforma/`): `/tareas`, `/stock` y
+`/auth` (Keycloak). Para que esta app viva en `/stock`:
+
+- `DJANGO_RUTA_BASE=/stock` y `APP_URL_PUBLICA=https://spsil.luiscontacto03.com/stock`
+  (el portal quita el prefijo; `docker-entrypoint.sh` se lo pasa a uvicorn como
+  `--root-path` y Django lo vuelve a poner en sus enlaces);
+- añadir `spsil.luiscontacto03.com` a `DJANGO_ALLOWED_HOSTS` y
+  `https://spsil.luiscontacto03.com` a `DJANGO_CSRF_TRUSTED_ORIGINS`.
+
+Con `AUTH_MODO=sso` el login pasa por Keycloak (`core/sso.py`) y Keycloak manda:
+grupo `IT` = Admin/Superadmin, grupos `Stock`, `Stock Tabla` y `Stock Config`
+= páginas sueltas (se reescriben en cada entrada). El departamento se sigue
+asignando en `/admin/`. Los usuarios que ya existían se reconocen por nombre de usuario.
+
+El túnel del agente queda en `wss://spsil.luiscontacto03.com/stock/ws/gateway/<slug>/`.
+El agente puede seguir apuntando a `stock.luiscontacto03.com` mientras ese host
+de Nginx Proxy Manager siga existiendo; cambiar su `GATEWAY_URL` es opcional.
+
 ## Despliegue con Docker
 
 - **Servidor Y** (raíz del repo): `Dockerfile` + `docker-compose.server.yml`,

@@ -33,10 +33,10 @@ aparte hardcodeado para Configuración (eso duplicaba las tarjetas).
 <div class="home-section">
     <h2 class="home-section__title">{% ui "gateway.nav.group_admin" %}</h2>
     <div class="home-grid">
-        <a class="home-card" href="/admin/auth/user/">
+        <a class="home-card" href="{% url 'admin:auth_user_changelist' %}">
             <div class="home-card__title">{% ui "gateway.nav.users" %}</div>
         </a>
-        <a class="home-card" href="/admin/gateway/gatewaynode/">
+        <a class="home-card" href="{% url 'admin:gateway_gatewaynode_changelist' %}">
             <div class="home-card__title">{% ui "gateway.nav.nodes" %}</div>
         </a>
     </div>

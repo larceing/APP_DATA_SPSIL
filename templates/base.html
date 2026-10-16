@@ -83,8 +83,8 @@
         {% if request.user.is_superuser %}
         <div class="sidebar__group">
             <div class="sidebar__group-title">{% ui "gateway.nav.group_admin" %}</div>
-            <a class="sidebar__link" href="/admin/auth/user/">{% ui "gateway.nav.users" %}</a>
-            <a class="sidebar__link" href="/admin/gateway/gatewaynode/">{% ui "gateway.nav.nodes" %}</a>
+            <a class="sidebar__link" href="{% url 'admin:auth_user_changelist' %}">{% ui "gateway.nav.users" %}</a>
+            <a class="sidebar__link" href="{% url 'admin:gateway_gatewaynode_changelist' %}">{% ui "gateway.nav.nodes" %}</a>
         </div>
         {% endif %}
     </nav>
