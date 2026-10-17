@@ -16,10 +16,8 @@ import datetime
 import logging
 import time
 
-import pytds
-
 import cache
-from db import MSSQL_DATABASE, MSSQL_HOST, MSSQL_PASSWORD, MSSQL_USER
+import fuentes
 from db import _normalize
 from db import _query_stock as _query_stock_innertia
 from db import query_hueco_breakdown
@@ -71,7 +69,7 @@ MULTIPLICADOR_DEFECTO = {'min': 1.0, 'max': 1.0, 'punto': 1.0}
 
 
 def _mssql_connect():
-    return pytds.connect(server=MSSQL_HOST, database=MSSQL_DATABASE, user=MSSQL_USER, password=MSSQL_PASSWORD)
+    return fuentes.conectar_a3()
 
 
 def _query_stock_raw():

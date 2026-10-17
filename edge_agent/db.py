@@ -1,18 +1,4 @@
-import os
-
-import pymysql
-import pytds
-
-MARIADB_HOST = os.environ.get('MARIADB_HOST')
-MARIADB_PORT = int(os.environ.get('MARIADB_PORT', '3306'))
-MARIADB_DATABASE = os.environ.get('MARIADB_DATABASE')
-MARIADB_USER = os.environ.get('MARIADB_USER')
-MARIADB_PASSWORD = os.environ.get('MARIADB_PASSWORD')
-
-MSSQL_HOST = os.environ.get('MSSQL_HOST')
-MSSQL_DATABASE = os.environ.get('MSSQL_DATABASE')
-MSSQL_USER = os.environ.get('MSSQL_USER')
-MSSQL_PASSWORD = os.environ.get('MSSQL_PASSWORD')
+import fuentes
 
 
 def _normalize(value):
@@ -20,10 +6,7 @@ def _normalize(value):
 
 
 def _mariadb_connect():
-    return pymysql.connect(
-        host=MARIADB_HOST, port=MARIADB_PORT, user=MARIADB_USER,
-        password=MARIADB_PASSWORD, database=MARIADB_DATABASE,
-    )
+    return fuentes.conectar_innertia()
 
 
 def _query_stock(ubicaciones):
@@ -65,10 +48,7 @@ def _query_familias():
     """Familia de cada artículo: SQL Server dbo.ARTICULO (CODART/CAR1),
     usada para las reglas de exclusión por familia y para mostrarla en
     Stock (columna FAMILIA)."""
-    conn = pytds.connect(
-        server=MSSQL_HOST, database=MSSQL_DATABASE,
-        user=MSSQL_USER, password=MSSQL_PASSWORD,
-    )
+    conn = fuentes.conectar_a3()
     try:
         with conn.cursor() as cur:
             cur.execute('SELECT CODART, CAR1 FROM dbo.ARTICULO')

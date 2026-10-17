@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load static uistrings %}
+
+{% block title %}{{ pagina.nombre }} · SPSIL{% endblock %}
+{% block main_class %}app-main--wide{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'css/informes.css' %}">
+
+<div class="card informe">
+    <div class="informe__cabecera">
+        <div>
+            <h1>{{ pagina.nombre }}</h1>
+            <p class="text-muted informe__descripcion">{{ pagina.descripcion }}</p>
+            <p class="text-muted informe__meta">
+                {% ui "gateway.informes.origen" %}: {{ pagina.origen }}
+                · {% ui "gateway.informes.actualizado" %}: <span id="inf-actualizado">—</span>
+            </p>
+        </div>
+        <div class="informe__acciones">
+            <button type="button" class="button" id="inf-actualizar">{% ui "gateway.informes.actualizar" %}</button>
+            <button type="button" class="button button--secundario" id="inf-recargar" title="{% ui 'gateway.informes.recargar_bd' %}">&#8635;</button>
+            <button type="button" class="button button--secundario" id="inf-limpiar">{% ui "gateway.informes.limpiar" %}</button>
+        </div>
+    </div>
+
+    <div class="informe__filtros" id="inf-filtros"></div>
+    <div class="informe__chips" id="inf-chips"></div>
+    <p class="informe__estado" id="inf-estado">{% ui "gateway.informes.cargando" %}</p>
+    <div class="informe__grid" id="inf-visuales"></div>
+</div>
+
+{{ spec|json_script:"inf-spec" }}
+<script>
+window.INFORME_CONFIG = {
+    datosUrl: "{{ datos_url }}",
+    textos: {
+        todos: "{% ui 'gateway.informes.todos' %}",
+        buscar: "{% ui 'gateway.informes.buscar' %}",
+        sinDatos: "{% ui 'gateway.informes.sin_datos' %}",
+        filas: "{% ui 'gateway.informes.filas' %}",
+        exportar: "{% ui 'gateway.informes.exportar' %}",
+        cargando: "{% ui 'gateway.informes.cargando' %}",
+        errorOffline: "{% ui 'gateway.informes.error_offline' %}",
+        error: "{% ui 'gateway.informes.error' %}"
+    }
+};
+</script>
+<script src="{% static 'js/informes.js' %}"></script>
+{% endblock %}

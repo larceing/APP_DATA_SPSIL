@@ -1,0 +1,3 @@
+# Scripts y plantillas que se ejecutan dentro de contenedores Linux
+*.sh text eol=lf
+*.template text eol=lf

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import informes, views
 
 app_name = 'gateway'
 
@@ -34,4 +34,14 @@ urlpatterns = [
     ),
     path('config/stock-tabla/', views.config_stock_tabla_view, name='config_stock_tabla'),
     path('config/stock-tabla/save/', views.config_save_stock_tabla, name='config_save_stock_tabla'),
+    path('config/origenes/', views.config_origenes_view, name='config_origenes'),
+    path('config/origenes/estado/', views.config_origenes_api, name='config_origenes_api'),
+    path('informes/<slug:slug>/datos/', views.informe_datos_api, name='informe_datos'),
+]
+
+# Una URL con nombre propio por informe (gateway:informe_<slug>): el sidebar
+# enlaza cada Page por su url_name, sin argumentos.
+urlpatterns += [
+    path(f'informes/{pagina["slug"]}/', views.informe_view, {'slug': pagina['slug']}, name=informes.url_name(pagina))
+    for pagina in informes.PAGINAS
 ]

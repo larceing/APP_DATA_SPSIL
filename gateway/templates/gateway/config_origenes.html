@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load static uistrings %}
+
+{% block title %}{% ui "gateway.origenes.titulo" %}{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'css/informes.css' %}">
+<div class="card">
+    <h1>{% ui "gateway.origenes.titulo" %}</h1>
+    <p class="text-muted">{% ui "gateway.origenes.descripcion" %}</p>
+    <button type="button" class="button" id="btn-comprobar">{% ui "gateway.origenes.comprobar" %}</button>
+    <p id="origenes-estado" class="text-muted" style="margin-top: var(--spacing-md);"></p>
+    <div style="overflow:auto;">
+        <table class="inf-tabla origenes-tabla" id="origenes-tabla" style="display:none;">
+            <thead><tr><th>Origen</th><th>Tipo</th><th>Dirección / hoja</th><th>Base de datos / pestaña</th><th>Usuario</th><th>Estado</th><th>ms</th></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+    <p class="text-muted" style="margin-top: var(--spacing-md); font-size: 0.85rem;">
+        Para cambiar un origen: edita <code>edge_agent/.env</code> en el equipo del agente
+        (<code>A3_HOST</code>, <code>INNERTIA_HOST</code>, <code>GSHEET_*</code>…) y reinicia con
+        <code>docker compose up -d</code>. Las contraseñas nunca salen de ese equipo.
+    </p>
+</div>
+
+<script>
+(function () {
+    var boton = document.getElementById('btn-comprobar');
+    var estado = document.getElementById('origenes-estado');
+    var tabla = document.getElementById('origenes-tabla');
+
+    function celda(texto, clase) {
+        var td = document.createElement('td');
+        td.textContent = texto === null || texto === undefined ? '' : texto;
+        if (clase) td.className = clase;
+        return td;
+    }
+
+    function comprobar() {
+        boton.disabled = true;
+        estado.textContent = '{% ui "gateway.informes.cargando" %}';
+        fetch("{% url 'gateway:config_origenes_api' %}", {credentials: 'same-origin'})
+            .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, json: j}; }); })
+            .then(function (res) {
+                if (!res.ok) throw new Error(res.json.error === 'node_offline' ? '{% ui "gateway.informes.error_offline" %}' : (res.json.error || 'error'));
+                var tbody = tabla.querySelector('tbody');
+                tbody.innerHTML = '';
+                Object.keys(res.json.config).forEach(function (nombre) {
+                    var c = res.json.config[nombre];
+                    var s = res.json.status[nombre] || {};
+                    var tr = document.createElement('tr');
+                    tr.appendChild(celda(nombre));
+                    tr.appendChild(celda(c.tipo));
+                    tr.appendChild(celda(c.tipo === 'gsheet' ? c.id : (c.host + ':' + c.puerto)));
+                    tr.appendChild(celda(c.tipo === 'gsheet' ? c.hoja : c.base_datos));
+                    tr.appendChild(celda(c.usuario || ''));
+                    tr.appendChild(celda(s.ok ? 'OK' : ('Error: ' + (s.error || '')), s.ok ? 'ok' : 'ko'));
+                    tr.appendChild(celda(s.ms));
+                    tbody.appendChild(tr);
+                });
+                tabla.style.display = '';
+                estado.textContent = res.json.datasets.length + ' conjuntos de datos disponibles: ' + res.json.datasets.join(', ');
+            })
+            .catch(function (err) { estado.textContent = err.message; })
+            .finally(function () { boton.disabled = false; });
+    }
+
+    boton.addEventListener('click', comprobar);
+    comprobar();
+})();
+</script>
+{% endblock %}

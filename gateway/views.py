@@ -1,4 +1,7 @@
 import asyncio
+import datetime
+import json
+import time
 import uuid
 from functools import wraps
 
@@ -6,15 +9,18 @@ import openpyxl
 from asgiref.sync import sync_to_async
 from channels.layers import get_channel_layer
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponse, HttpResponseNotAllowed, JsonResponse
+from django.core.exceptions import PermissionDenied
+from django.http import Http404, HttpResponse, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
+from . import informes as informes_catalogo
 from .consumers import CONNECTED_NODES
 from .models import (
     ExclusionRule, GatewayNode, HuecoTipoCategoria, StockTablaConfig, SupplierCategory, UbicacionAlmacen,
 )
-from .permissions import page_required
+from .permissions import get_accessible_pages, page_required
 from .tabs import check_and_register
 
 REQUEST_TIMEOUT = 20  # segundos: el agente encadena varias consultas SQL
@@ -386,3 +392,120 @@ async def config_save_stock_tabla(request):
     except GatewayFetchError:
         pass
     return redirect('gateway:config_stock_tabla')
+
+
+# =============================================================================
+# Informes (réplica web de Informe Susana / Informe Cobros / Informe Almacén)
+# Catálogo en gateway/informes.py; conjuntos de datos en edge_agent/informes.py.
+# =============================================================================
+
+# Algunos conjuntos tardan 15-20 s la primera vez (facturas, ventas): el
+# agente los cachea después, pero la primera petición necesita más margen
+# que las 20 s de Stock.
+INFORMES_TIMEOUT = 120
+# Caché corta en el portal: varias personas abriendo la misma página no
+# hacen viajar los mismos megas por el túnel una y otra vez.
+INFORMES_CACHE_SEGUNDOS = 60
+_INFORMES_CACHE = {}
+
+
+def _resolver_anios(objeto):
+    """Sustituye {Y0}..{Y3} (año actual y tres anteriores) en el catálogo:
+    las columnas de Pedidos Clientes se llaman con el año real, como en el
+    modelo de Power BI."""
+    anio = datetime.date.today().year
+    texto = json.dumps(objeto, ensure_ascii=False)
+    for i in range(4):
+        texto = texto.replace('{Y%d}' % i, str(anio - i))
+    return json.loads(texto)
+
+
+def _acceso_informe(user, pagina):
+    slug = informes_catalogo.page_slug(pagina)
+    return any(page.slug == slug for page in get_accessible_pages(user))
+
+
+async def _fetch_dataset(nombre, refrescar=False):
+    entrada = _INFORMES_CACHE.get(nombre)
+    if entrada and not refrescar and time.time() - entrada[0] < INFORMES_CACHE_SEGUNDOS:
+        return entrada[1]
+    if nombre == 'stock_tabla':
+        # Mismo cálculo que la página Stock Tabla (cachés de fondo del agente).
+        columnas, filas = await _fetch_stock_tabla_data()
+        datos = {'columns': columnas, 'rows': filas, 'dicts': {}, 'updated_at': None}
+    else:
+        supplier_categories = await sync_to_async(list)(
+            SupplierCategory.objects.filter(activo=True).values('codpro', 'organizacion', 'categoria')
+        )
+        payload = await _ask_gateway('dataset', {
+            'name': nombre,
+            'refrescar': refrescar,
+            'ubicaciones': await _fetch_ubicaciones(),
+            'tipos_excluidos': await _fetch_tipos_excluidos(),
+            'supplier_categories': supplier_categories,
+        }, timeout=INFORMES_TIMEOUT)
+        datos = {clave: payload.get(clave) for clave in ('columns', 'rows', 'dicts', 'updated_at', 'query_seconds')}
+    _INFORMES_CACHE[nombre] = (time.time(), datos)
+    return datos
+
+
+@login_required
+def informe_view(request, slug):
+    pagina = informes_catalogo.PAGINAS_POR_SLUG.get(slug)
+    if pagina is None:
+        raise Http404
+    if not _acceso_informe(request.user, pagina):
+        raise PermissionDenied('No tienes acceso a esta página.')
+    return render(request, 'gateway/informe.html', {
+        'pagina': pagina,
+        'spec': _resolver_anios(pagina),
+        'datos_url': reverse('gateway:informe_datos', args=[slug]),
+    })
+
+
+@require_get_async
+async def informe_datos_api(request, slug):
+    pagina = informes_catalogo.PAGINAS_POR_SLUG.get(slug)
+    if pagina is None:
+        raise Http404
+
+    def _comprobar():
+        if not request.user.is_authenticated:
+            return 401
+        return 200 if _acceso_informe(request.user, pagina) else 403
+
+    estado = await sync_to_async(_comprobar)()
+    if estado != 200:
+        return JsonResponse({'error': 'forbidden' if estado == 403 else 'login'}, status=estado)
+
+    refrescar = request.GET.get('refrescar') == '1'
+    resultado, errores = {}, {}
+    for nombre in informes_catalogo.datasets_de(pagina):
+        try:
+            resultado[nombre] = await _fetch_dataset(nombre, refrescar)
+        except GatewayFetchError as exc:
+            errores[nombre] = exc.error
+    if not resultado:
+        primer_error = next(iter(errores.values()), 'agent_error')
+        status = 503 if primer_error in ('node_offline', 'no_node_configured') else 502
+        return JsonResponse({'error': primer_error, 'errores': errores}, status=status)
+    return JsonResponse({'datasets': resultado, 'errores': errores})
+
+
+@page_required('config-origenes')
+def config_origenes_view(request):
+    return render(request, 'gateway/config_origenes.html')
+
+
+@page_required('config-origenes')
+@require_get_async
+async def config_origenes_api(request):
+    try:
+        payload = await _ask_gateway('sources_status', {'comprobar': True}, timeout=60)
+    except GatewayFetchError as exc:
+        return JsonResponse({'error': exc.error}, status=exc.status)
+    return JsonResponse({
+        'config': payload.get('config', {}),
+        'status': payload.get('status', {}),
+        'datasets': payload.get('datasets', []),
+    })

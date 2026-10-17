@@ -1,8 +1,51 @@
+# Agente de datos SPSIL (equipo X). Transportable: todo lo que depende de la
+# red (IPs de las bases de datos, URL del portal, hojas) está en .env.
+#
+#   cp .env.example .env    # y rellenar
+#   docker compose up -d --build
+#   docker compose --profile proxy-bd up -d   # + proxy de BD para Power BI
+#
+# El agente nunca abre puertos hacia la red: inicia él la conexión saliente
+# (WebSocket) hacia el portal, igual que el Power BI On-Premises Gateway. La
+# API local de prueba solo se publica en 127.0.0.1 de este equipo.
+name: spsil-agente
+
 services:
   edge-agent:
     build: .
-    container_name: edge-agent
+    image: spsil-edge-agent:latest
+    container_name: spsil-edge-agent
     restart: unless-stopped
     env_file: .env
-    # Sin "ports:": equipo X nunca escucha, siempre inicia la conexión
-    # saliente hacia servidor Y (igual que el Power BI On-Premises Gateway).
+    environment:
+      # Dentro del contenedor escucha en todas sus interfaces; fuera solo se
+      # publica en el localhost del equipo (línea "ports").
+      LOCAL_API_HOST: 0.0.0.0
+    ports:
+      - "127.0.0.1:${LOCAL_API_PORT:-8765}:${LOCAL_API_PORT:-8765}"
+    extra_hosts:
+      # Para pruebas con el portal corriendo en este mismo equipo:
+      # GATEWAY_URL=ws://host.docker.internal:8000/ws/gateway/<slug>/
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/salud' % os.environ.get('LOCAL_API_PORT','8765'), timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  # Punto fijo de acceso a las bases de datos para Power BI y otras
+  # herramientas: reenvía el tráfico TCP a A3_HOST/INNERTIA_HOST del .env.
+  db-proxy:
+    profiles: ["proxy-bd"]
+    image: nginx:1.27-alpine
+    container_name: spsil-db-proxy
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+      NGINX_ENVSUBST_FILTER: "^(A3_|INNERTIA_)"
+    volumes:
+      - ./proxy/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+    ports:
+      - "${PROXY_BIND:-127.0.0.1}:${PROXY_PUERTO_A3:-1433}:1433"
+      - "${PROXY_BIND:-127.0.0.1}:${PROXY_PUERTO_INNERTIA:-3306}:3306"

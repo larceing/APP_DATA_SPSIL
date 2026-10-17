@@ -7,11 +7,15 @@ import os
 import websockets
 
 import cache
+import informes
+import local_api
 from db import get_stock_actual
 from stock_tabla import _refrescar_stock_raw, _refrescar_ventas_y_huecos, get_stock_tabla, set_activo
 
-GATEWAY_URL = os.environ['GATEWAY_URL']  # p.ej. wss://y.example.com/ws/gateway/nave-central/
-NODE_TOKEN = os.environ['NODE_TOKEN']
+# p.ej. wss://y.example.com/ws/gateway/nave-central/ — sin él, el agente
+# arranca solo con la API local (modo prueba en el propio equipo X).
+GATEWAY_URL = os.environ.get('GATEWAY_URL', '')
+NODE_TOKEN = os.environ.get('NODE_TOKEN', '')
 # Ventas/huecos ya son baratos (~1s): refresco frecuente. VW_OFERTAS_STOCK_RAW
 # se llama entera sin filtro y tarda ~27s en sí misma — con 30s de
 # intervalo se repetía prácticamente sin parar, día y noche, aunque nadie
@@ -30,6 +34,11 @@ QUERY_HANDLERS = {
     # interruptor de pausa — no consulta nada, solo actualiza el flag en
     # memoria (ver stock_tabla._CONFIG_ACTIVO).
     'stock_tabla_config': set_activo,
+    # Informes Susana / Cobros / Almacén (edge_agent/informes.py): un solo
+    # tipo de consulta con el nombre del conjunto de datos en params.
+    'dataset': informes.get_dataset,
+    'datasets_list': informes.get_datasets_list,
+    'sources_status': informes.get_sources_status,
 }
 
 log = logging.getLogger('edge_agent')
@@ -62,24 +71,35 @@ async def handle_message(ws, raw_message):
 
 
 async def run():
+    if not GATEWAY_URL:
+        log.warning('Sin GATEWAY_URL: no se abre el túnel, solo la API local (si LOCAL_API_PORT está puesto)')
+        local_api.ESTADO['tunel'] = 'sin configurar'
+        return
     url = f'{GATEWAY_URL}?token={NODE_TOKEN}'
+    local_api.ESTADO['gateway_url'] = GATEWAY_URL
     backoff = 1
     while True:
         try:
             # Margen amplio: no necesitamos detectar una caída real en
-            # segundos, con 2 minutos sobra para este uso.
-            async with websockets.connect(url, ping_interval=30, ping_timeout=120) as ws:
+            # segundos, con 2 minutos sobra para este uso. max_size sin
+            # límite: algunos informes (facturas) mandan varios MB de filas.
+            async with websockets.connect(url, ping_interval=30, ping_timeout=120, max_size=None) as ws:
                 log.info('Conectado a %s', GATEWAY_URL)
+                local_api.ESTADO['tunel'] = 'conectado'
                 backoff = 1
                 async for raw_message in ws:
-                    await handle_message(ws, raw_message)
+                    # Cada mensaje en su propia tarea: un informe lento no
+                    # bloquea a los demás que llegan por el mismo túnel.
+                    asyncio.create_task(handle_message(ws, raw_message))
         except Exception as exc:
+            local_api.ESTADO['tunel'] = 'desconectado'
             log.warning('Conexión perdida (%s); reintento en %ss', exc, backoff)
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 60)
 
 
 async def main():
+    local_api.arrancar()
     await asyncio.gather(
         run(),
         cache.refresh_loop('stock_raw', _refrescar_stock_raw, STOCK_RAW_REFRESH_SECONDS),

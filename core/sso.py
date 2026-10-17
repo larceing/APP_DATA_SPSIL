@@ -8,7 +8,9 @@ issuer, así que no hace falta validar la firma) y se lee /userinfo.
 Keycloak manda sobre los usuarios: en cada entrada se sincroniza
 - `is_staff`/`is_superuser` con el grupo "IT" (Admin/Superadmin de esta app);
 - las páginas sueltas (`UserProfile.extra_pages`) con los grupos
-  "Stock", "Stock Tabla" y "Stock Config" (todas las de configuración).
+  "Stock", "Stock Tabla" y "Stock Config" (todas las de configuración),
+  "Informes" (todos los informes) e "Informes <Sección>" (los de una
+  sección: Informes Cobros, Informes Ventas, Informes Compras...).
 Con este modo la administración de usuarios desaparece de /admin/ y del menú;
 el departamento que ya tuviera alguien se conserva, pero no se edita aquí.
 Es el mismo realm que el Gestor de Tareas: entrar en una app vale para la otra.
@@ -29,8 +31,23 @@ GRUPOS_PAGINAS = {
     'Stock': ['stock'],
     'Stock Tabla': ['stock-tabla'],
     'Stock Config': ['config-exclusion', 'config-proveedores', 'config-hueco-tipos',
-                     'config-ubicaciones', 'config-stock-tabla'],
+                     'config-ubicaciones', 'config-stock-tabla', 'config-origenes'],
 }
+
+
+def grupos_paginas():
+    """GRUPOS_PAGINAS más los grupos de informes, sacados del catálogo
+    (gateway/informes.py) para que un informe nuevo no haya que darlo de
+    alta también aquí."""
+    from gateway import informes
+
+    grupos = dict(GRUPOS_PAGINAS)
+    grupos[informes.GRUPO_TODOS] = [informes.page_slug(p) for p in informes.PAGINAS]
+    for seccion in informes.SECCIONES:
+        grupos[informes.grupo_keycloak(seccion)] = [
+            informes.page_slug(p) for p in informes.PAGINAS if p['grupo'] == seccion
+        ]
+    return grupos
 
 
 def _redirect_uri(request):
@@ -90,7 +107,7 @@ def sincronizar_usuario(datos):
     user.is_superuser = es_admin
     user.set_unusable_password()
     user.save()
-    slugs = {slug for grupo, lista in GRUPOS_PAGINAS.items() if grupo in grupos for slug in lista}
+    slugs = {slug for grupo, lista in grupos_paginas().items() if grupo in grupos for slug in lista}
     perfil, _ = UserProfile.objects.get_or_create(user=user)
     perfil.extra_pages.set(Page.objects.filter(slug__in=slugs))
     return user

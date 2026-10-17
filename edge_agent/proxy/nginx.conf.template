@@ -1,0 +1,29 @@
+# Proxy TCP hacia las bases de datos de SPSIL. Las direcciones salen del
+# .env (A3_HOST/A3_PORT, INNERTIA_HOST/INNERTIA_PORT) al arrancar el
+# contenedor; no hay ninguna IP escrita aquí.
+worker_processes 1;
+
+events {
+    worker_connections 256;
+}
+
+stream {
+    log_format basico '$remote_addr [$time_local] $protocol $status $bytes_sent $bytes_received $session_time "$upstream_addr"';
+    access_log /dev/stdout basico;
+
+    # SQL Server (A3 ERP)
+    server {
+        listen 1433;
+        proxy_connect_timeout 10s;
+        proxy_timeout 1h;
+        proxy_pass ${A3_HOST}:${A3_PORT};
+    }
+
+    # MariaDB (Innertia)
+    server {
+        listen 3306;
+        proxy_connect_timeout 10s;
+        proxy_timeout 1h;
+        proxy_pass ${INNERTIA_HOST}:${INNERTIA_PORT};
+    }
+}
