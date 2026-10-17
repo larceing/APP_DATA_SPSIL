@@ -23,6 +23,10 @@ services:
       LOCAL_API_HOST: 0.0.0.0
     ports:
       - "127.0.0.1:${LOCAL_API_PORT:-8765}:${LOCAL_API_PORT:-8765}"
+    volumes:
+      # Clave JSON de la cuenta de servicio de Google para hojas privadas
+      # (GOOGLE_CREDENCIALES=/app/credenciales/google.json). Carpeta fuera de git.
+      - ./credenciales:/app/credenciales:ro
     extra_hosts:
       # Para pruebas con el portal corriendo en este mismo equipo:
       # GATEWAY_URL=ws://host.docker.internal:8000/ws/gateway/<slug>/

@@ -9,3 +9,4 @@ logs/*.log
 server.pid
 .env
 datainputtemplates/
+edge_agent/credenciales/

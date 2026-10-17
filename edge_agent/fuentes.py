@@ -19,6 +19,7 @@ import csv
 import datetime
 import decimal
 import io
+import json
 import logging
 import os
 import time
@@ -162,22 +163,51 @@ def consultar(origen, sql, parametros=None):
     return filas
 
 
-def _descargar_gsheet(clave, hoja=None):
-    """CSV de la hoja como texto. La hoja tiene que estar compartida como
-    "cualquiera con el enlace" o publicada; si no, Google responde 401 o una
-    página de login, y se lanza un error que dice qué hacer."""
+# Hojas privadas: cuenta de servicio de Google (fichero JSON de la clave).
+# Se comparte la hoja con el correo de la cuenta como Lector y el agente la
+# lee con la API de Sheets; las hojas públicas siguen yendo por CSV directo.
+GOOGLE_CREDENCIALES = _env('GOOGLE_CREDENCIALES')
+
+
+def _leer_con_cuenta_servicio(clave, hoja):
+    """CSV de una hoja privada leída con la cuenta de servicio (API de Sheets)."""
+    from google.auth.transport.requests import Request
+    from google.oauth2 import service_account
+
+    credenciales = service_account.Credentials.from_service_account_file(
+        GOOGLE_CREDENCIALES, scopes=['https://www.googleapis.com/auth/spreadsheets.readonly'],
+    )
+    credenciales.refresh(Request())
     c = config_gsheet(clave, hoja)
-    aviso = (f'La hoja {clave} no es pública: compártela como "cualquiera con el enlace" '
-             f'o pon en GSHEET_{clave} la URL de "Publicar en la web" en formato CSV')
+    rango = urllib.parse.quote(c['hoja'] or 'A:ZZ', safe='')
+    url = f"https://sheets.googleapis.com/v4/spreadsheets/{c['id']}/values/{rango}?valueRenderOption=FORMATTED_VALUE"
+    req = urllib.request.Request(url, headers={'Authorization': f'Bearer {credenciales.token}'})
+    with urllib.request.urlopen(req, timeout=GSHEET_TIMEOUT) as resp:
+        valores = json.loads(resp.read().decode('utf-8')).get('values', [])
+    salida = io.StringIO()
+    csv.writer(salida).writerows(valores)
+    return salida.getvalue()
+
+
+def _descargar_gsheet(clave, hoja=None):
+    """CSV de la hoja como texto. Si la hoja no es pública (401/403 o página
+    de login) y hay GOOGLE_CREDENCIALES, se lee con la cuenta de servicio; si
+    no, se lanza un error que dice qué hacer."""
+    c = config_gsheet(clave, hoja)
+    aviso = (f'La hoja {clave} no es pública: compártela con la cuenta de servicio del agente '
+             f'(GOOGLE_CREDENCIALES), como "cualquiera con el enlace", o pon en GSHEET_{clave} '
+             f'la URL de "Publicar en la web" en formato CSV')
     req = urllib.request.Request(c['url'], headers={'User-Agent': 'spsil-edge-agent'})
     try:
         with urllib.request.urlopen(req, timeout=GSHEET_TIMEOUT) as resp:
             texto = resp.read().decode('utf-8-sig', 'replace')
     except urllib.error.HTTPError as exc:
-        if exc.code in (401, 403):
-            raise RuntimeError(aviso) from None
-        raise
+        if exc.code not in (401, 403):
+            raise
+        texto = '<'
     if texto.lstrip().startswith('<'):
+        if GOOGLE_CREDENCIALES and not c['id'].startswith('http'):
+            return _leer_con_cuenta_servicio(clave, hoja)
         raise RuntimeError(aviso)
     return texto
 

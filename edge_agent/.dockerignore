@@ -4,3 +4,4 @@ __pycache__/
 mock.db
 proxy/
 tests/
+credenciales/
