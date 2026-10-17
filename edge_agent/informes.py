@@ -1108,18 +1108,36 @@ def precios_transporte():
     La hoja tiene tres filas de cabecera (rango, tamaño, escalado)."""
     def calcular():
         filas = fuentes.leer_gsheet_filas('PRECIOS_TRANSPORTE')
-        if len(filas) < 4:
+        # La exportación CSV de Google junta las filas de rango y tamaño en
+        # la primera y deja en blanco los escalados de texto ("1-7", "2-7"...)
+        # de la fila ESCALADO: se reconstruyen como "<último número + 1>-7".
+        i_esc = next((i for i, f in enumerate(filas) if f and f[0].strip().upper() == 'ESCALADO'), None)
+        if i_esc is None or i_esc == 0:
             return {}
-        cab_rango, cab_escalado = filas[0], filas[2]
+        cab_rango = filas[0]
+        escalados, anterior_rango, ultimo = [], None, 0
+        for i, valor in enumerate(filas[i_esc]):
+            rango = (cab_rango[i] if i < len(cab_rango) else '').split(' ')[0]
+            if rango != anterior_rango:
+                anterior_rango, ultimo = rango, 0
+            valor = valor.strip()
+            if valor.isdigit():
+                ultimo = int(valor)
+                escalados.append(valor)
+            else:
+                escalados.append(valor or f'{ultimo + 1}-7')
         tarifa = {}
-        for fila in filas[3:]:
+        for fila in filas[i_esc + 1:]:
             provincia = (fila[0] or '').strip().upper()
             for i in range(1, len(fila)):
                 rango = (cab_rango[i] if i < len(cab_rango) else '').split(' ')[0]
-                escalado = (cab_escalado[i] if i < len(cab_escalado) else '').strip()
-                precio = _num(fila[i], None)
-                if provincia and precio is not None:
-                    tarifa[(provincia, rango, escalado)] = precio / 100
+                texto = (fila[i] or '').strip()
+                # "2.985" es 2985 (punto de miles): el precio va en céntimos.
+                if re.fullmatch(r'\d{1,3}(\.\d{3})+', texto):
+                    texto = texto.replace('.', '')
+                precio = _num(texto, None)
+                if provincia and precio is not None and i < len(escalados):
+                    tarifa[(provincia, rango, escalados[i])] = precio / 100
         return tarifa
     return _aux('precios_transporte', calcular)
 
