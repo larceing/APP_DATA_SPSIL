@@ -42,7 +42,7 @@ class SsoTests(TestCase):
     @patch('core.sso.requests.post')
     def test_vuelta_correcta_inicia_sesion(self, mock_post, mock_get):
         mock_post.return_value = Mock(status_code=200, json=lambda: {'access_token': 't'})
-        mock_get.return_value = Mock(status_code=200, json=lambda: {'preferred_username': 'lucia', 'groups': []})
+        mock_get.return_value = Mock(status_code=200, json=lambda: {'preferred_username': 'lucia', 'groups': ['/Stock']})
         request = self._request('/oidc/callback/?code=abc&state=bueno')
         request.session['sso_state'] = 'bueno'
         request.session['sso_next'] = '/stock/gateway/home/'
@@ -50,3 +50,28 @@ class SsoTests(TestCase):
         self.assertEqual((respuesta.status_code, respuesta['Location']), (302, '/stock/gateway/home/'))
         self.assertTrue(get_user_model().objects.filter(username='lucia').exists())
         self.assertEqual(mock_post.call_args.kwargs['data']['grant_type'], 'authorization_code')
+
+    @patch('core.sso.requests.get')
+    @patch('core.sso.requests.post')
+    def test_sin_grupo_de_la_app_no_entra(self, mock_post, mock_get):
+        mock_post.return_value = Mock(status_code=200, json=lambda: {'access_token': 't'})
+        mock_get.return_value = Mock(status_code=200, json=lambda: {'preferred_username': 'otro', 'groups': ['/Tareas/Admin']})
+        request = self._request('/oidc/callback/?code=abc&state=bueno')
+        request.session['sso_state'] = 'bueno'
+        self.assertEqual(sso.sso_callback(request).status_code, 403)
+        self.assertFalse(get_user_model().objects.filter(username='otro').exists())
+
+    def test_espacio_por_aplicacion(self):
+        user = sso.sincronizar_usuario({'preferred_username': 'marta', 'groups': ['/Stock', '/Stock/Compras']})
+        slugs = {p.slug for p in user.profile.extra_pages.all()}
+        self.assertFalse(user.is_staff)
+        self.assertIn('stock', slugs)
+        self.assertIn('stock-tabla', slugs)
+        self.assertIn('informe-compras', slugs)
+        self.assertNotIn('informe-cobros-clientes', slugs)
+        admin_app = sso.sincronizar_usuario({'preferred_username': 'jefa', 'groups': ['/Stock/Admin']})
+        self.assertTrue(admin_app.is_superuser)
+        self.assertIsNone(sso.sincronizar_usuario({'preferred_username': 'x', 'groups': ['/Tareas/Admin']}))
+        self.assertTrue(sso.sincronizar_usuario({'preferred_username': 'it', 'groups': ['/IT']}).is_superuser)
+        sin_tilde = sso.sincronizar_usuario({'preferred_username': 'alm', 'groups': ['/Stock/Almacen']})
+        self.assertIn('informe-informe-almacen', {p.slug for p in sin_tilde.profile.extra_pages.all()})

@@ -5,34 +5,81 @@ Authorization Code Flow sin librerías extra (solo `requests`, que ya está):
 con un code, aquí se cambia por un token (petición directa del servidor al
 issuer, así que no hace falta validar la firma) y se lee /userinfo.
 
-Keycloak manda sobre los usuarios: en cada entrada se sincroniza
-- `is_staff`/`is_superuser` con el grupo "IT" (Admin/Superadmin de esta app);
-- las páginas sueltas (`UserProfile.extra_pages`) con los grupos
-  "Stock", "Stock Tabla" y "Stock Config" (todas las de configuración),
-  "Informes" (todos los informes) e "Informes <Sección>" (los de una
-  sección: Informes Cobros, Informes Ventas, Informes Compras...).
+Keycloak manda sobre los usuarios, con un espacio por aplicación (grupos con
+"Full group path" activado en el mapper "groups" del cliente):
+- `/Stock`: entrar en esta app (ve la página Stock). Sin ningún grupo de la
+  app (ni IT) no se entra, aunque se sea admin de otra app.
+- `/Stock/Admin`: administrador solo de esta app (ve y configura todo aquí).
+- `/Stock/<Departamento>`: páginas de ese departamento (ver DEPARTAMENTOS:
+  Almacén, Compras, Cobros, Pedidos, Ventas, Pendientes, Logística, Config).
+- `IT`: administrador global, entra y administra todas las apps.
+Los grupos sueltos antiguos ("Stock Tabla", "Stock Config", "Informes...")
+siguen valiendo mientras se migra a la estructura nueva.
 Con este modo la administración de usuarios desaparece de /admin/ y del menú;
 el departamento que ya tuviera alguien se conserva, pero no se edita aquí.
 Es el mismo realm que el Gestor de Tareas: entrar en una app vale para la otra.
 """
 import secrets
+import unicodedata
 from urllib.parse import urlencode
 
 import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model, login, logout
-from django.http import HttpResponseBadRequest, HttpResponseRedirect
+from django.http import HttpResponseBadRequest, HttpResponseForbidden, HttpResponseRedirect
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 
 GRUPO_ADMIN = 'IT'
-# grupo de Keycloak -> slugs de Page (gateway) que concede
+APP = 'Stock'
+CONFIG = ['config-exclusion', 'config-proveedores', 'config-hueco-tipos',
+          'config-ubicaciones', 'config-stock-tabla', 'config-origenes']
+# grupos sueltos antiguos -> slugs de Page (gateway) que conceden
 GRUPOS_PAGINAS = {
     'Stock': ['stock'],
     'Stock Tabla': ['stock-tabla'],
-    'Stock Config': ['config-exclusion', 'config-proveedores', 'config-hueco-tipos',
-                     'config-ubicaciones', 'config-stock-tabla', 'config-origenes'],
+    'Stock Config': CONFIG,
 }
+
+
+def _clave(texto):
+    """'Almacén' y 'almacen' cuentan igual."""
+    sin_tildes = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode()
+    return sin_tildes.strip().casefold()
+
+
+def departamentos():
+    """/Stock/<Departamento> -> slugs de Page. Cada sección de informes es un
+    departamento; Almacén y Compras incluyen además Stock y Stock Tabla."""
+    from gateway import informes
+
+    deps = {seccion: [informes.page_slug(p) for p in informes.PAGINAS if p['grupo'] == seccion]
+            for seccion in informes.SECCIONES}
+    deps['Almacén'] = ['stock', 'stock-tabla'] + deps.get('Almacén', [])
+    deps['Compras'] = ['stock-tabla'] + deps.get('Compras', [])
+    deps['Config'] = CONFIG
+    return {_clave(nombre): slugs for nombre, slugs in deps.items()}
+
+
+def leer_grupos(grupos):
+    """(acceso, es_admin, slugs) a partir de los grupos de Keycloak, con o
+    sin ruta completa ('/Stock/Compras' o 'Stock/Compras')."""
+    nombres = {g.strip('/') for g in grupos or [] if g}
+    es_admin = GRUPO_ADMIN in nombres or f'{APP}/Admin' in nombres
+    slugs, acceso = set(), es_admin
+    deps = departamentos()
+    for nombre in nombres:
+        partes = nombre.split('/')
+        if partes[0] == APP:
+            acceso = True
+            if len(partes) == 1:
+                slugs.add('stock')
+            else:
+                slugs.update(deps.get(_clave(partes[1]), []))
+        elif nombre in grupos_paginas():
+            acceso = True
+            slugs.update(grupos_paginas()[nombre])
+    return acceso, es_admin, slugs
 
 
 def grupos_paginas():
@@ -90,14 +137,16 @@ def _datos_usuario(request, code):
 
 
 def sincronizar_usuario(datos):
-    """Crea o actualiza el usuario de Django a partir del userinfo de Keycloak."""
+    """Crea o actualiza el usuario de Django a partir del userinfo de Keycloak.
+    Devuelve None si no tiene ningún grupo de esta app (ni IT)."""
     from gateway.models import Page, UserProfile
 
     username = datos.get('preferred_username')
     if not username:
         return None
-    grupos = set(datos.get('groups') or [])
-    es_admin = GRUPO_ADMIN in grupos
+    acceso, es_admin, slugs = leer_grupos(datos.get('groups'))
+    if not acceso:
+        return None
     user, _ = get_user_model().objects.get_or_create(username=username)
     user.first_name = (datos.get('given_name') or '')[:150]
     user.last_name = (datos.get('family_name') or '')[:150]
@@ -107,7 +156,6 @@ def sincronizar_usuario(datos):
     user.is_superuser = es_admin
     user.set_unusable_password()
     user.save()
-    slugs = {slug for grupo, lista in grupos_paginas().items() if grupo in grupos for slug in lista}
     perfil, _ = UserProfile.objects.get_or_create(user=user)
     perfil.extra_pages.set(Page.objects.filter(slug__in=slugs))
     return user
@@ -120,9 +168,11 @@ def sso_callback(request):
     if request.GET.get('error') or not esperado or not secrets.compare_digest(state, esperado):
         return HttpResponseBadRequest('No se pudo completar el inicio de sesión. Vuelve a intentarlo.')
     datos = _datos_usuario(request, request.GET.get('code', ''))
-    user = sincronizar_usuario(datos) if datos else None
-    if user is None:
+    if not datos:
         return HttpResponseBadRequest('No se pudo completar el inicio de sesión. Vuelve a intentarlo.')
+    user = sincronizar_usuario(datos)
+    if user is None:
+        return HttpResponseForbidden('No tienes acceso a esta aplicación. Pide a un administrador que te añada al grupo Stock.')
     login(request, user, backend='django.contrib.auth.backends.ModelBackend')
     return HttpResponseRedirect(next_url)
 
